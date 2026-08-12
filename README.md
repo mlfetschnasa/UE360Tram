@@ -24,8 +24,8 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 - [x] **Phase 1 — Plugin skeleton & tram core**
 - [x] **Phase 2 — Network synchronization**
 - [x] **Phase 3 — Rider/view slots**
-- [x] **Phase 4 — Shared observer rig** (this commit)
-- [ ] Phase 5 — Display geometry model
+- [x] **Phase 4 — Shared observer rig**
+- [x] **Phase 5 — Display geometry model** (this commit)
 - [ ] Phase 6 — nDisplay/DisplayCluster production backend
 - [ ] Phase 7 — Calibration & hardening
 
@@ -160,6 +160,33 @@ implemented (`GetDiagnosticSummary()` on both `UTramMovementComponent` and `ATra
 exist and can back a HUD, but no HUD/console command consumes them yet) - deferred to Phase 7
 (hardening) rather than built speculatively now.
 
+## Phase 5 contents
+
+Physical display geometry as data, kept independent of both tram simulation and networking
+(Objectives 16, 17, 20, 21) - and independent of any specific rendering backend, so Phase 6 can
+target nDisplay (or a fallback) without this data model changing:
+
+| Type | File | Responsibility |
+|---|---|---|
+| `FTramScreenDefinition` | `TramDisplayTypes.h` | One physical screen: global `DisplayIndex`, parametric `BaseAngularPositionDegrees`, plus calibration offsets (position/yaw/pitch/roll) layered on top of the parametric ideal. |
+| `FTramSlotDisplayMapping` | `TramDisplayTypes.h` | Explicit `SlotIndex -> DisplayIndices[]`, not a formula - Objective 21 explicitly warns against assuming a perfectly even distribution. |
+| `UTramDisplayConfiguration` | `TramDisplayConfiguration.h/.cpp` | A `UDataAsset` holding `DisplayCount`, `CircleRadiusCm` (default 228.6cm = 7.5ft, configurable), `ObserverHeightCm`, per-screen `DisplayWidthCm`/`DisplayHeightCm`, the `Screens`/`SlotMappings` arrays, and queries (`GetScreenLocalTransform`, `GetDisplaysForSlot`, `GetSlotForDisplay`, `IsConfigurationValid`). |
+| `UTramDisplayDebugComponent` | `TramDisplayDebugComponent.h/.cpp` | Draws the virtual circle, all screen planes with forward-vector arrows and slot-ownership labels, the observer location, and the composed observer forward vector - reading only already-shared state (`ATramViewRig`), owning none of it. Not replicated; purely a local dev aid. |
+
+`GenerateDefaultLayout(DisplaysPerSlot)` is an explicit, `CallInEditor` reset-to-ideal tool
+(evenly-spaced angles from `DisplayCount`/`CircleRadiusCm`, contiguous slot chunks) - it is
+never called implicitly, so it can never silently discard an installer's calibration work.
+
+`GetScreenLocalTransform(DisplayIndex)` returns a transform **relative to the observer rig's
+origin**; combine with `ATramViewRig::GetSharedObserverTransform()` to get a world-space screen
+transform: `ScreenWorld = GetScreenLocalTransform(Index) * ObserverTransform` (same
+local-then-parent composition order used throughout, see Phase 4's composition-order note).
+Screens are modeled as tangent to the circle, facing inward toward the center, vertically
+centered at `ObserverHeightCm` - not yet using per-screen physical width/height to derive an
+off-axis frustum (that's Phase 6, once real screen dimensions and Unreal's chosen multi-display
+backend are known); `DisplayWidthCm`/`DisplayHeightCm` are carried now so Phase 6 doesn't need
+a data model change, and already size the debug-visualization boxes.
+
 ## Determinism model (why this satisfies the seam-consistency requirement)
 
 The component never integrates `DeltaTime` frame-over-frame. Instead:
@@ -210,6 +237,13 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
 - `ObserverOffset` default (`(0,0,150)` cm, identity rotation) is a placeholder seated-eye-height
   guess, not a measurement from the real installation; it's fully configurable per Objective 10
   and is expected to be tuned once physical dimensions are known (Phase 4/5).
+- Screens are modeled as vertically centered at one configurable `ObserverHeightCm`, not as
+  spanning an independently configurable floor/ceiling range - a simplification consistent with
+  "portrait 4K panels arranged around a circle at viewer eye height," revisit if the real
+  installation needs per-screen vertical placement beyond `CalibrationPositionOffsetCm` (Phase 5).
+- `DisplayWidthCm`/`DisplayHeightCm` (default 70x120cm) are placeholder guesses for a portrait
+  4K panel, not measured - configurable and intended to be corrected once real panel dimensions
+  are known, before Phase 6 derives off-axis frustums from them (Phase 5).
 
 ## Testing this phase
 

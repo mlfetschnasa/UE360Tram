@@ -6,6 +6,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "TramPlayerState.h"
 #include "TramPlayerController.generated.h"
 
 UCLASS()
@@ -24,8 +25,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tram|Slot")
 	int32 GetAssignedTramSlot() const;
 
+	// Mirrors this controller's own PlayerState's OnTramSlotChanged, but is safe to bind to
+	// exactly once at BeginPlay regardless of PlayerState replication timing: the controller
+	// itself tracks when PlayerState becomes valid (BeginPlay for the locally-authoritative
+	// case, OnRep_PlayerState for a remote client where it can arrive after BeginPlay) and
+	// (re)binds to it internally, firing this once immediately with the current value at bind
+	// time too. Bind to THIS, not to PlayerState's event directly, from Blueprint.
+	UPROPERTY(BlueprintAssignable, Category = "Tram|Slot")
+	FTramSlotChangedSignature OnLocalTramSlotChanged;
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnRep_PlayerState() override;
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestTramSlot(int32 DesiredSlot);
@@ -34,4 +45,14 @@ private:
 	// Resolves the slot to request at connect time, in priority order: command line
 	// (-TramSlot=N), then a [TramSystem] PreferredSlot= config value, else INDEX_NONE (auto).
 	int32 ResolveInitialDesiredSlot() const;
+
+	// (Re)binds to the current PlayerState's OnTramSlotChanged if it has changed since the
+	// last call, unbinding from the previous one first. Idempotent - safe to call from both
+	// BeginPlay and OnRep_PlayerState without double-binding.
+	void BindToPlayerStateSlotChanges();
+
+	UFUNCTION()
+	void HandlePlayerStateSlotChanged(int32 NewSlotIndex);
+
+	TWeakObjectPtr<ATramPlayerState> BoundPlayerState;
 };

@@ -164,17 +164,28 @@ any UI:
 - `ATramPlayerController::GetAssignedTramSlot()` should return a valid (non -1) index shortly
   after each client connects, and no two connected riders should ever report the same slot.
 
-To be notified rather than poll: bind to **`ATramPlayerController::OnLocalTramSlotChanged`**
-(e.g. `Get Player Controller` -> cast to `ATramPlayerController` -> `Bind Event to
-OnLocalTramSlotChanged` -> `Print String` the slot index), not to `ATramPlayerState`'s
-`OnTramSlotChanged` directly - `PlayerState` can still be `None` at the exact moment a Level
-Blueprint's `BeginPlay` runs (especially on a client, before its own PlayerState has
-replicated down), so a bind attempted straight against `Get Player State` can silently never
-happen. `OnLocalTramSlotChanged` is the controller's own forwarding of that event: it tracks
-PlayerState becoming valid internally (covering both the server's own locally-authoritative
-controller and a remote client where PlayerState arrives after `BeginPlay`) and re-fires with
-whatever the slot already is at bind time, so one `Bind Event to OnLocalTramSlotChanged` at
-`BeginPlay` is reliable regardless of timing.
+To be notified rather than poll: bind to **`ATramPlayerController::OnLocalTramSlotChanged`**,
+not to `ATramPlayerState`'s `OnTramSlotChanged` directly - `PlayerState` can still be `None` at
+the exact moment a Level Blueprint's `BeginPlay` runs (especially on a client, before its own
+PlayerState has replicated down), so a bind attempted straight against `Get Player State` can
+silently never happen. `OnLocalTramSlotChanged` is the controller's own forwarding of that
+event, and the controller tracks PlayerState becoming valid internally regardless of whether
+that happens before or after the controller's own `BeginPlay`.
+
+That said, **`OnLocalTramSlotChanged` is still an ordinary delegate: it does not replay a
+broadcast that happened before you bound to it.** Slot assignment is a full server round-trip
+and can complete before your own Blueprint gets around to binding (especially on a listen
+server's own window, where it can resolve almost instantly) - if that happens, your bind
+silently misses the one-and-only broadcast, and since the slot doesn't change again, nothing
+ever fires afterward. The reliable pattern is **both**, in this order, on the same exec chain:
+
+1. `Bind Event to OnLocalTramSlotChanged` (catches any *future* change)
+2. Immediately afterward, also call `GetAssignedTramSlot()` directly and handle that value too
+   (catches a slot that was already assigned *before* you bound)
+
+Both your bound event and the immediate poll should feed the same handling logic (e.g. the
+same `Print String`) - it's fine, and expected, for it to fire twice with the same value if a
+change happens to land exactly between steps 1 and 2.
 
 ## Known gaps at this stage
 

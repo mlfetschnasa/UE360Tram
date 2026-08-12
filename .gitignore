@@ -1,0 +1,19 @@
+# Unreal Engine plugin repo - generated/build artifacts
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+*.VC.db
+*.opensdf
+*.sdf
+*.opendb
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+.vs/
+.vscode/
+.idea/
+
+# Host project noise if this plugin is dropped into a Plugins/ folder for testing
+/HostProject/

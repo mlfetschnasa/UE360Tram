@@ -21,8 +21,8 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 
 ## Status
 
-- [x] **Phase 1 — Plugin skeleton & tram core** (this commit)
-- [ ] Phase 2 — Network synchronization
+- [x] **Phase 1 — Plugin skeleton & tram core**
+- [x] **Phase 2 — Network synchronization** (this commit)
 - [ ] Phase 3 — Rider/view slots
 - [ ] Phase 4 — Shared observer rig
 - [ ] Phase 5 — Display geometry model
@@ -39,6 +39,51 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 | `TramMotionMath` | `TramMotionMath.h/.cpp` | Pure, UE-actor-independent closed-form kinematics: given (v0, target, accel/decel rate, time budget, distance budget) → time/distance/speed consumed. No side effects, no UObject dependency — reusable from automation tests. |
 | `ATramSplineRoute` | `TramSplineRoute.h/.cpp` | Wraps a `USplineComponent` + per-segment speed metadata. Distance↔transform queries, segment lookups, closed-loop wraparound. Pure route data — no movement or networking knowledge. |
 | `UTramMovementComponent` | `TramMovementComponent.h/.cpp` | Makes any Actor a tram. Holds one authoritative `FTramMotionState` anchor; every tick, re-evaluates current distance/speed as a deterministic function of `(anchor, SynchronizedServerTime - anchor.timestamp)`. `LaunchTram/PauseTram/ResumeTram/StopTram` publish a fresh anchor. |
+
+## Phase 2 contents
+
+`UTramMovementComponent` is now network-live:
+
+- `CurrentSnapshot` is `UPROPERTY(ReplicatedUsing = OnRep_CurrentSnapshot)`. The server is the
+  only writer (through `PublishSnapshot`, unchanged from Phase 1); every other machine receives
+  updates through `OnRep_CurrentSnapshot`.
+- **No Server RPCs** for `LaunchTram/PauseTram/ResumeTram/StopTram`. These are only ever
+  invoked locally, on the listen-server operator's own machine (e.g. from a HUD button that
+  only that machine's controller exposes) — `HasControlAuthority()` alone is correct and
+  simpler than routing through an RPC that would need a valid owning connection it doesn't
+  have (the tram Actor is level-placed, not player-owned).
+- The owning Actor must set `bReplicates = true`; the component logs a warning on the server if
+  it doesn't. The component also forces `bAlwaysRelevant = true` on its owner, since the tram
+  is the one object every rider must always be able to see regardless of UE's distance-based
+  relevancy culling.
+- **Late joining** (Objective 9) falls out of normal UE property replication: a newly-relevant
+  actor channel sends the current value of `CurrentSnapshot` as part of its initial bunch, so a
+  late client's very first `OnRep_CurrentSnapshot` call already carries the tram's current
+  state (Running, mid-route, at whatever distance/speed it currently has) — no special-case
+  "catch-up" logic was needed. That first call is detected (`bHasReceivedAnySnapshot`) and
+  adopts the state directly, skipping error measurement (there is no prior local prediction to
+  compare against).
+- **Correction handling** (Objective 15) lives entirely in `OnRep_CurrentSnapshot`, which only
+  ever fires on non-authority machines:
+  1. Evaluate the *old* anchor forward to the *new* anchor's timestamp → "predicted distance".
+  2. `Error = NewSnapshot.Distance - PredictedDistance`.
+  3. `|Error| <= CorrectionSnapThresholdCm` (default 3cm): adopt the new anchor directly, no
+     visible change.
+  4. `|Error| <= CorrectionSevereThresholdCm` (default 300cm): blend, over
+     `CorrectionBlendDurationSeconds` (default 0.35s), from "where the old anchor's trajectory
+     would be right now" to "where the new anchor's trajectory is right now" — both evaluated
+     with the same deterministic function, so the blend is smooth without any machine needing
+     to agree on the transient blend itself, only on the converged result.
+  5. Otherwise: snap instantly and log a warning (a slow blend across hundreds of cm would look
+     worse than a snap, and something is likely wrong with connectivity).
+- Extrapolation is clamped to `MaxExtrapolationSeconds` (default 3s) with a throttled warning,
+  guarding against wild projections if replication stalls or synchronized time jumps.
+- A subtle late-join bug was caught and fixed while implementing this: `BeginPlay` must **not**
+  reset `CurrentSnapshot` on non-authority machines. Actor `BeginPlay` order relative to initial
+  property replication isn't guaranteed, so a client resetting its own already-correct
+  (possibly `Running`) replicated state back to `WaitingForLaunch` would have silently broken
+  late joining. Only the authority seeds the initial snapshot in `BeginPlay`; everyone else
+  waits for replication.
 
 ## Determinism model (why this satisfies the seam-consistency requirement)
 

@@ -6,11 +6,47 @@
 #include "GameFramework/GameStateBase.h"
 #include "Engine/World.h"
 #include "Engine/EngineTypes.h"
+#include "Net/UnrealNetwork.h"
+
+namespace
+{
+	FString ToDiagnosticString(ETramMovementState State)
+	{
+		switch (State)
+		{
+		case ETramMovementState::WaitingForLaunch: return TEXT("WaitingForLaunch");
+		case ETramMovementState::Running: return TEXT("Running");
+		case ETramMovementState::Paused: return TEXT("Paused");
+		case ETramMovementState::Stopped: return TEXT("Stopped");
+		default: return TEXT("Unknown");
+		}
+	}
+
+	FString ToDiagnosticString(ENetRole Role)
+	{
+		switch (Role)
+		{
+		case ROLE_Authority: return TEXT("Authority");
+		case ROLE_AutonomousProxy: return TEXT("AutonomousProxy");
+		case ROLE_SimulatedProxy: return TEXT("SimulatedProxy");
+		default: return TEXT("None");
+		}
+	}
+}
 
 UTramMovementComponent::UTramMovementComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
+
+	SetIsReplicatedByDefault(true);
+}
+
+void UTramMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UTramMovementComponent, CurrentSnapshot);
 }
 
 double UTramMovementComponent::GetSynchronizedServerTimeSeconds() const
@@ -50,18 +86,42 @@ void UTramMovementComponent::BeginPlay()
 			*GetNameSafe(GetOwner()), *GetNameSafe(Route));
 	}
 
-	CurrentSnapshot = FTramMotionState();
-	CurrentSnapshot.RouteId = Route ? Route->RouteId : NAME_None;
-	CurrentSnapshot.ServerTimestamp = GetSynchronizedServerTimeSeconds();
-	CurrentSnapshot.MovementState = ETramMovementState::WaitingForLaunch;
+	if (AActor* Owner = GetOwner())
+	{
+		// The tram is the one shared object every rider must always see; don't let UE's
+		// distance-based relevancy culling ever drop it for a far-away/edge-case viewpoint.
+		Owner->bAlwaysRelevant = true;
+
+		if (HasControlAuthority() && !Owner->GetIsReplicated())
+		{
+			UE_LOG(LogTramSystem, Warning, TEXT("Tram actor %s does not have bReplicates=true; tram state will not synchronize to any connected clients"), *GetNameSafe(Owner));
+		}
+	}
+
+	// Only the authority establishes the starting snapshot. Non-authority machines must not
+	// touch CurrentSnapshot here: for a late-joining client, BeginPlay is not guaranteed to
+	// run after the actor's initial replicated properties arrive, and stomping a
+	// possibly-already-correct (e.g. Running) value back to WaitingForLaunch would break
+	// Objective 9 (late join must synchronize without disturbing anything). Non-authority
+	// machines simply wait for OnRep_CurrentSnapshot / the initial replicated value.
+	if (HasControlAuthority())
+	{
+		CurrentSnapshot = FTramMotionState();
+		CurrentSnapshot.RouteId = Route ? Route->RouteId : NAME_None;
+		CurrentSnapshot.ServerTimestamp = GetSynchronizedServerTimeSeconds();
+		CurrentSnapshot.MovementState = ETramMovementState::WaitingForLaunch;
+
+		if (Route && Route->IsRouteValid())
+		{
+			CurrentSnapshot.DistanceAlongSplineCm = Route->NormalizeDistanceCm(StartingDistanceCms);
+			CurrentSnapshot.CurrentSegmentIndex = Route->GetSegmentIndexAtDistance(static_cast<float>(CurrentSnapshot.DistanceAlongSplineCm));
+			CurrentSnapshot.TargetSpeedCms = Route->GetSegmentTargetSpeedCms(CurrentSnapshot.CurrentSegmentIndex);
+		}
+	}
 
 	if (Route && Route->IsRouteValid())
 	{
-		CurrentSnapshot.DistanceAlongSplineCm = Route->NormalizeDistanceCm(StartingDistanceCms);
-		CurrentSnapshot.CurrentSegmentIndex = Route->GetSegmentIndexAtDistance(static_cast<float>(CurrentSnapshot.DistanceAlongSplineCm));
-		CurrentSnapshot.TargetSpeedCms = Route->GetSegmentTargetSpeedCms(CurrentSnapshot.CurrentSegmentIndex);
-
-		EvaluateAndApply(CurrentSnapshot.ServerTimestamp);
+		EvaluateAndApply(GetSynchronizedServerTimeSeconds());
 	}
 }
 
@@ -83,10 +143,11 @@ void UTramMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (TimeSinceLastPublish >= SnapshotPublishIntervalSeconds)
 		{
 			// Re-anchor to the current evaluated state. This bounds extrapolation error
-			// accumulation and, from Phase 2 onward, is also the network publish cadence.
+			// accumulation and is also the network replication trigger (property replication
+			// only sends when the value actually changes).
 			double Distance, Speed;
 			int32 Segment;
-			Evaluate(CurrentSnapshot, Now - CurrentSnapshot.ServerTimestamp, Distance, Speed, Segment);
+			EvaluateClamped(CurrentSnapshot, Now, Distance, Speed, Segment);
 
 			FTramMotionState Reanchored = CurrentSnapshot;
 			Reanchored.ServerTimestamp = Now;
@@ -104,7 +165,33 @@ void UTramMovementComponent::EvaluateAndApply(double QueryServerTime)
 {
 	double Distance, Speed;
 	int32 Segment;
-	Evaluate(CurrentSnapshot, QueryServerTime - CurrentSnapshot.ServerTimestamp, Distance, Speed, Segment);
+	EvaluateClamped(CurrentSnapshot, QueryServerTime, Distance, Speed, Segment);
+
+	if (bCorrectionBlendActive)
+	{
+		const double Alpha = (CorrectionBlendDurationSeconds > UE_DOUBLE_SMALL_NUMBER)
+			? FMath::Clamp((QueryServerTime - CorrectionBlendStartServerTime) / CorrectionBlendDurationSeconds, 0.0, 1.0)
+			: 1.0;
+
+		if (Alpha >= 1.0)
+		{
+			bCorrectionBlendActive = false;
+		}
+		else
+		{
+			// Blend from where the *old* anchor's trajectory would be right now toward where
+			// the new authoritative anchor's trajectory is right now. Both sides are
+			// deterministic functions of this machine's own snapshots, so the blend is
+			// smooth without needing to match any other machine's transient blend state -
+			// only the post-blend result needs to converge, which it does by construction.
+			double PreDistance, PreSpeed;
+			int32 PreSegment;
+			EvaluateClamped(PreviousSnapshotForBlend, QueryServerTime, PreDistance, PreSpeed, PreSegment);
+
+			Distance = FMath::Lerp(PreDistance, Distance, Alpha);
+			Speed = FMath::Lerp(PreSpeed, Speed, Alpha);
+		}
+	}
 
 	LastEvaluatedDistanceCm = Distance;
 	LastEvaluatedSpeedCms = Speed;
@@ -205,6 +292,31 @@ void UTramMovementComponent::Evaluate(const FTramMotionState& Snapshot, double E
 	OutSegmentIndex = Segment;
 }
 
+void UTramMovementComponent::EvaluateClamped(const FTramMotionState& Snapshot, double QueryServerTime, double& OutDistanceCm, double& OutSpeedCms, int32& OutSegmentIndex) const
+{
+	double Elapsed = QueryServerTime - Snapshot.ServerTimestamp;
+
+	if (Elapsed > MaxExtrapolationSeconds)
+	{
+		if (QueryServerTime - LastStaleSnapshotWarningTime > 1.0)
+		{
+			UE_LOG(LogTramSystem, Warning, TEXT("Tram snapshot on %s is %.2fs stale (cap %.2fs) - clamping extrapolation. Check network/replication health."),
+				*GetNameSafe(GetOwner()), Elapsed, MaxExtrapolationSeconds);
+			LastStaleSnapshotWarningTime = QueryServerTime;
+		}
+		Elapsed = MaxExtrapolationSeconds;
+	}
+	else if (Elapsed < 0.0)
+	{
+		// Synchronized time moving backward relative to this anchor (clock correction, or a
+		// snapshot arriving stamped slightly in what looks like "the future" due to jitter):
+		// hold at the anchor rather than evaluating a negative-time motion.
+		Elapsed = 0.0;
+	}
+
+	Evaluate(Snapshot, Elapsed, OutDistanceCm, OutSpeedCms, OutSegmentIndex);
+}
+
 void UTramMovementComponent::PublishSnapshot(const FTramMotionState& NewSnapshot)
 {
 	CurrentSnapshot = NewSnapshot;
@@ -213,6 +325,71 @@ void UTramMovementComponent::PublishSnapshot(const FTramMotionState& NewSnapshot
 	UE_LOG(LogTramSystem, Verbose, TEXT("Tram snapshot published: state=%d dist=%.1f speed=%.1f target=%.1f segment=%d t=%.3f"),
 		(int32)NewSnapshot.MovementState, NewSnapshot.DistanceAlongSplineCm, NewSnapshot.CurrentSpeedCms,
 		NewSnapshot.TargetSpeedCms, NewSnapshot.CurrentSegmentIndex, NewSnapshot.ServerTimestamp);
+}
+
+void UTramMovementComponent::OnRep_CurrentSnapshot(FTramMotionState OldSnapshot)
+{
+	if (Route && CurrentSnapshot.RouteId != NAME_None && Route->RouteId != CurrentSnapshot.RouteId)
+	{
+		UE_LOG(LogTramSystem, Error, TEXT("UTramMovementComponent on %s received a snapshot for route '%s' but is configured with route '%s' - positions will be wrong until this is fixed"),
+			*GetNameSafe(GetOwner()), *CurrentSnapshot.RouteId.ToString(), *Route->RouteId.ToString());
+	}
+
+	if (!bHasReceivedAnySnapshot)
+	{
+		// First snapshot this machine has ever seen (typically a late join): adopt directly.
+		// There is no prior local prediction to compare against, so measuring "error" here
+		// would be meaningless - see Objective 9 (late joiners synchronize instantly).
+		bHasReceivedAnySnapshot = true;
+		bCorrectionBlendActive = false;
+		LastPredictionErrorCm = 0.0;
+		LastCorrectionAmountCm = 0.0;
+		UE_LOG(LogTramSystem, Log, TEXT("Tram on %s received initial synchronized state: state=%s dist=%.1f"),
+			*GetNameSafe(GetOwner()), *ToDiagnosticString(CurrentSnapshot.MovementState), CurrentSnapshot.DistanceAlongSplineCm);
+		return;
+	}
+
+	// Prediction error = what the new authoritative snapshot says vs. what this machine would
+	// have predicted (from its old anchor) for that same synchronized timestamp.
+	double PredictedDistance, PredictedSpeed;
+	int32 PredictedSegment;
+	EvaluateClamped(OldSnapshot, CurrentSnapshot.ServerTimestamp, PredictedDistance, PredictedSpeed, PredictedSegment);
+
+	const double Error = CurrentSnapshot.DistanceAlongSplineCm - PredictedDistance;
+	LastPredictionErrorCm = Error;
+
+	const double AbsError = FMath::Abs(Error);
+	const double Now = GetSynchronizedServerTimeSeconds();
+
+	if (AbsError <= CorrectionSnapThresholdCm)
+	{
+		bCorrectionBlendActive = false;
+		LastCorrectionAmountCm = 0.0;
+	}
+	else if (AbsError <= CorrectionSevereThresholdCm)
+	{
+		PreviousSnapshotForBlend = OldSnapshot;
+		CorrectionBlendStartServerTime = Now;
+		bCorrectionBlendActive = true;
+		LastCorrectionAmountCm = Error;
+		UE_LOG(LogTramSystem, Verbose, TEXT("Tram on %s correcting %.1fcm over %.2fs"), *GetNameSafe(GetOwner()), Error, CorrectionBlendDurationSeconds);
+	}
+	else
+	{
+		bCorrectionBlendActive = false;
+		LastCorrectionAmountCm = Error;
+		UE_LOG(LogTramSystem, Warning, TEXT("Tram on %s: severe prediction error %.1fcm (threshold %.1fcm) - snapping instantly"),
+			*GetNameSafe(GetOwner()), Error, CorrectionSevereThresholdCm);
+	}
+}
+
+FString UTramMovementComponent::GetDiagnosticSummary() const
+{
+	const ENetRole LocalRole = GetOwner() ? GetOwner()->GetLocalRole() : ROLE_None;
+	return FString::Printf(TEXT("Role=%s State=%s Dist=%.1fcm Speed=%.1f/%.1fcm/s Seg=%d PredErr=%.1fcm Blend=%s"),
+		*ToDiagnosticString(LocalRole), *ToDiagnosticString(CurrentSnapshot.MovementState),
+		LastEvaluatedDistanceCm, LastEvaluatedSpeedCms, CurrentSnapshot.TargetSpeedCms, LastEvaluatedSegmentIndex,
+		LastPredictionErrorCm, bCorrectionBlendActive ? TEXT("true") : TEXT("false"));
 }
 
 void UTramMovementComponent::LaunchTram()
@@ -256,7 +433,7 @@ void UTramMovementComponent::PauseTram()
 	const double Now = GetSynchronizedServerTimeSeconds();
 	double Distance, Speed;
 	int32 Segment;
-	Evaluate(CurrentSnapshot, Now - CurrentSnapshot.ServerTimestamp, Distance, Speed, Segment);
+	EvaluateClamped(CurrentSnapshot, Now, Distance, Speed, Segment);
 
 	FTramMotionState NewSnapshot = CurrentSnapshot;
 	NewSnapshot.ServerTimestamp = Now;
@@ -299,7 +476,7 @@ void UTramMovementComponent::StopTram()
 	const double Now = GetSynchronizedServerTimeSeconds();
 	double Distance, Speed;
 	int32 Segment;
-	Evaluate(CurrentSnapshot, Now - CurrentSnapshot.ServerTimestamp, Distance, Speed, Segment);
+	EvaluateClamped(CurrentSnapshot, Now, Distance, Speed, Segment);
 
 	FTramMotionState NewSnapshot = CurrentSnapshot;
 	NewSnapshot.ServerTimestamp = Now;

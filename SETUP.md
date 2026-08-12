@@ -164,6 +164,18 @@ any UI:
 - `ATramPlayerController::GetAssignedTramSlot()` should return a valid (non -1) index shortly
   after each client connects, and no two connected riders should ever report the same slot.
 
+To be notified rather than poll: bind to **`ATramPlayerController::OnLocalTramSlotChanged`**
+(e.g. `Get Player Controller` -> cast to `ATramPlayerController` -> `Bind Event to
+OnLocalTramSlotChanged` -> `Print String` the slot index), not to `ATramPlayerState`'s
+`OnTramSlotChanged` directly - `PlayerState` can still be `None` at the exact moment a Level
+Blueprint's `BeginPlay` runs (especially on a client, before its own PlayerState has
+replicated down), so a bind attempted straight against `Get Player State` can silently never
+happen. `OnLocalTramSlotChanged` is the controller's own forwarding of that event: it tracks
+PlayerState becoming valid internally (covering both the server's own locally-authoritative
+controller and a remote client where PlayerState arrives after `BeginPlay`) and re-fires with
+whatever the slot already is at bind time, so one `Bind Event to OnLocalTramSlotChanged` at
+`BeginPlay` is reliable regardless of timing.
+
 ## Known gaps at this stage
 
 - No HUD is provided - `UTramMovementComponent`/`ATramViewRig`'s `GetDiagnosticSummary()` are

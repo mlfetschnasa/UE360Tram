@@ -1,10 +1,9 @@
 #include "TramMovementComponent.h"
 #include "TramSplineRoute.h"
 #include "TramMotionMath.h"
+#include "TramSyncTime.h"
 #include "TramSystem.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/GameStateBase.h"
-#include "Engine/World.h"
 #include "Engine/EngineTypes.h"
 #include "Net/UnrealNetwork.h"
 
@@ -51,19 +50,7 @@ void UTramMovementComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 
 double UTramMovementComponent::GetSynchronizedServerTimeSeconds() const
 {
-	if (const UWorld* World = GetWorld())
-	{
-		if (const AGameStateBase* GameState = World->GetGameState())
-		{
-			// AGameStateBase already tracks and compensates for the client/server clock
-			// offset over the network connection; it degrades to plain world time when
-			// there is no networking (standalone/listen-server-with-no-clients). Reusing
-			// it avoids inventing a parallel time-sync mechanism - see Rule 14.
-			return GameState->GetServerWorldTimeSeconds();
-		}
-		return World->GetTimeSeconds();
-	}
-	return 0.0;
+	return TramSyncTime::GetSynchronizedServerTimeSeconds(GetWorld());
 }
 
 bool UTramMovementComponent::HasControlAuthority() const
@@ -159,6 +146,20 @@ void UTramMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			PublishSnapshot(Reanchored);
 		}
 	}
+}
+
+FTransform UTramMovementComponent::GetAuthoritativeTransformAtServerTime(double QueryServerTime) const
+{
+	if (!Route)
+	{
+		return FTransform::Identity;
+	}
+
+	double Distance, Speed;
+	int32 Segment;
+	EvaluateClamped(CurrentSnapshot, QueryServerTime, Distance, Speed, Segment);
+
+	return Route->GetTransformAtDistanceCm(static_cast<float>(Distance));
 }
 
 void UTramMovementComponent::EvaluateAndApply(double QueryServerTime)

@@ -67,3 +67,37 @@ struct FTramMotionState
 	UPROPERTY(BlueprintReadOnly, Category = "Tram")
 	ETramMovementState MovementState = ETramMovementState::WaitingForLaunch;
 };
+
+// Which axes of the shared observer rig the listen-server operator's mouse currently drives.
+// A dedicated RollOnly mode is deliberately not offered (not required by the objectives).
+UENUM(BlueprintType)
+enum class ETramLookAxisMode : uint8
+{
+	Disabled UMETA(DisplayName = "Disabled"),
+	YawOnly UMETA(DisplayName = "Yaw Only"),
+	PitchOnly UMETA(DisplayName = "Pitch Only"),
+	YawPitch UMETA(DisplayName = "Yaw + Pitch"),
+	YawPitchRoll UMETA(DisplayName = "Yaw + Pitch + Roll"),
+};
+
+// Authoritative shared operator look rotation, represented the same way FTramMotionState
+// represents motion: as a time-parametric transition every machine evaluates identically via
+// Slerp(StartRotation, TargetRotation, alpha(SynchronizedServerTime)) rather than via any
+// form of local per-client interpolation. See ATramViewRig.
+USTRUCT(BlueprintType)
+struct FTramLookRotationState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tram")
+	FQuat StartRotation = FQuat::Identity;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tram")
+	FQuat TargetRotation = FQuat::Identity;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tram")
+	double TransitionStartServerTime = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tram")
+	double TransitionDurationSeconds = 0.0;
+};

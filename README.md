@@ -23,8 +23,8 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 
 - [x] **Phase 1 — Plugin skeleton & tram core**
 - [x] **Phase 2 — Network synchronization**
-- [x] **Phase 3 — Rider/view slots** (this commit)
-- [ ] Phase 4 — Shared observer rig
+- [x] **Phase 3 — Rider/view slots**
+- [x] **Phase 4 — Shared observer rig** (this commit)
 - [ ] Phase 5 — Display geometry model
 - [ ] Phase 6 — nDisplay/DisplayCluster production backend
 - [ ] Phase 7 — Calibration & hardening
@@ -107,6 +107,59 @@ assignment always runs inside `TryAssignTramSlot` on the server, which re-checks
 the moment it decides, so two simultaneous requests cannot both win the same slot - the second
 one sees it already taken and (by default) falls back automatically.
 
+## Phase 4 contents
+
+`ATramViewRig` is the single shared virtual observer (Objective 10) - the "one distributed view
+rig" the whole architecture is built around. Every rider derives its final view from this one
+actor's evaluation; no per-machine independent camera exists anywhere in the plugin.
+
+| Type | File | Responsibility |
+|---|---|---|
+| `ETramLookAxisMode` | `TramTypes.h` | `Disabled`/`YawOnly`/`PitchOnly`/`YawPitch`/`YawPitchRoll` (no dedicated `RollOnly`, per objectives). |
+| `FTramLookRotationState` | `TramTypes.h` | The look-rotation analogue of `FTramMotionState`: `{StartRotation, TargetRotation, TransitionStartServerTime, TransitionDurationSeconds}`, evaluated everywhere via `Slerp` at synchronized time rather than any per-client interpolation. |
+| `TramSyncTime` | `TramSyncTime.h/.cpp` | Factored out of `UTramMovementComponent` once a second consumer (`ATramViewRig`) needed the identical synchronized-time lookup. |
+| `ATramViewRig` | `TramViewRig.h/.cpp` | Composes `Tram Transform -> Smoothed Observer Base Orientation -> Shared Look Rotation` into `GetSharedObserverTransform()`. Owns rotation-follow smoothing and the shared operator look rotation. |
+
+**Rotation-follow smoothing (Objective 11) needs no new replicated state at all.** The tram's
+raw heading is already a deterministic function of shared state (route + the Phase 2
+replicated anchor + synchronized time), so every machine already computes it identically with
+zero jitter. "Smoothing" is therefore just a pure fixed time delay applied to that already-
+deterministic function: `Smoothed(t) = RawHeading(t - RotationFollowLagSeconds)`, evaluated via
+the new `UTramMovementComponent::GetAuthoritativeTransformAtServerTime(T)` (added this phase -
+same evaluation machinery as Phase 1/2, just queryable at an arbitrary time, not only "now").
+On straight track this is indistinguishable from the raw heading (nothing is changing); through
+a turn, the camera visibly lags and eases back once heading stabilizes - the desired cinematic
+effect - with no extra state, no extra replication, and by construction identical on every
+machine. `GetAuthoritativeTransformAtServerTime` deliberately ignores this machine's own
+transient correction blend (Phase 2), so the smoothing input is bit-identical across machines
+even during a rare correction event; only the position-only blend itself is allowed to be
+briefly client-local.
+
+**Shared operator look rotation (Objective 12)** reuses the exact "anchor + deterministic
+evaluation" pattern from tram motion, applied to rotation instead of distance: the server
+accumulates mouse deltas (only on axes enabled by the current `LookAxisMode`, other axes
+untouched rather than reset) into a local `DesiredLookRotator`, and every `LookPublishIntervalSeconds`
+publishes a new Slerp transition that continues from wherever the *previous* transition is
+currently evaluated (no pop between updates). `ApplyOperatorLookInput`/`SetLookAxisMode` use
+the same "no Server RPC, `HasAuthority()` is enough because it's only ever called locally by
+the listen-server operator's own process" reasoning as `UTramMovementComponent`'s commands.
+`LookAxisMode` itself is replicated (Objective 26 wants "active look mode" as a diagnostic on
+every machine) even though only the server's own accumulation logic depends on it.
+
+**Composition order** (documented per the "document transform multiplication order" rule):
+`ObserverLocation = TramTransform.TransformPosition(ObserverOffset.Location)` - the observer
+rides rigidly with the tram body, unaffected by rotation smoothing. `FinalRotation =
+SmoothedBaseRotation * ObserverOffset.Rotation * SharedLookRotation` - the fixed mounting
+offset and rotation-follow smoothing apply first, the operator's shared look is layered on top.
+
+Not yet built: an actual input-binding/HUD widget wiring mouse movement to
+`ApplyOperatorLookInput` and slot selection to `RequestTramSlot` - the plugin exposes
+`BlueprintCallable` entry points for both, but the concrete UMG/input-binding assets are a
+host-project concern. Likewise, console commands for the diagnostics values are not yet
+implemented (`GetDiagnosticSummary()` on both `UTramMovementComponent` and `ATramViewRig`
+exist and can back a HUD, but no HUD/console command consumes them yet) - deferred to Phase 7
+(hardening) rather than built speculatively now.
+
 ## Determinism model (why this satisfies the seam-consistency requirement)
 
 The component never integrates `DeltaTime` frame-over-frame. Instead:
@@ -147,6 +200,16 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
   on the locally-controlling machine only (`IsLocalController()`) - a remote client's command
   line/config is never visible to the server, so this must happen client-side and be sent up
   via RPC, not read server-side (Phase 3).
+- Rotation-follow smoothing is a pure fixed time delay, not a true recursive/exponential
+  filter - a recursive filter's state would need to be replayed from history to evaluate at an
+  arbitrary synchronized time, which is incompatible with this plugin's stateless
+  "re-derive everything from a shared anchor + time" model. A fixed delay still fully addresses
+  the objective's concern (no per-client local-frame-dependent divergence) and produces a
+  reasonable lag/settle feel for the spline-turn scenario described in the acceptance tests
+  (Phase 4).
+- `ObserverOffset` default (`(0,0,150)` cm, identity rotation) is a placeholder seated-eye-height
+  guess, not a measurement from the real installation; it's fully configurable per Objective 10
+  and is expected to be tuned once physical dimensions are known (Phase 4/5).
 
 ## Testing this phase
 

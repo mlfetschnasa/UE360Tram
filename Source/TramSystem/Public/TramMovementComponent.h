@@ -103,6 +103,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tram|State")
 	int32 GetCurrentSegmentIndex() const { return LastEvaluatedSegmentIndex; }
 
+	// Deterministic authoritative transform (route position+rotation) at an arbitrary
+	// synchronized server time - past, present, or a little into the future - ignoring this
+	// machine's own transient correction blend (if any is active). Every machine holding the
+	// same anchor computes an identical result for the same QueryServerTime, which is exactly
+	// what systems like ATramViewRig's rotation-follow smoothing need: they sample this at a
+	// time offset from "now" and must agree with every other machine on the result.
+	UFUNCTION(BlueprintCallable, Category = "Tram|State")
+	FTransform GetAuthoritativeTransformAtServerTime(double QueryServerTime) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Tram|State")
 	FTramMotionState GetAuthoritativeSnapshot() const { return CurrentSnapshot; }
 

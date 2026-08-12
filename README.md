@@ -22,8 +22,8 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 ## Status
 
 - [x] **Phase 1 — Plugin skeleton & tram core**
-- [x] **Phase 2 — Network synchronization** (this commit)
-- [ ] Phase 3 — Rider/view slots
+- [x] **Phase 2 — Network synchronization**
+- [x] **Phase 3 — Rider/view slots** (this commit)
 - [ ] Phase 4 — Shared observer rig
 - [ ] Phase 5 — Display geometry model
 - [ ] Phase 6 — nDisplay/DisplayCluster production backend
@@ -85,18 +85,40 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
   late joining. Only the authority seeds the initial snapshot in `BeginPlay`; everyone else
   waits for replication.
 
+## Phase 3 contents
+
+Rider identity (a connection) and tram slot (a portion of the display circle) are kept
+strictly separate, and slot state lives where other clients can see it - not only locally in
+a controller:
+
+| Class | File | Responsibility |
+|---|---|---|
+| `ATramPlayerState` | `TramPlayerState.h/.cpp` | Replicated `SlotIndex` per rider (`INDEX_NONE` = unassigned) plus a `OnTramSlotChanged` Blueprint event fired identically on server and clients. |
+| `ATramGameState` | `TramGameState.h/.cpp` | Replicated `NumTramSlots` (configurable, default 4 - never assumed elsewhere). `IsSlotOccupied`/`FindFirstFreeSlot`/`GetOccupiedSlots` are derived live from `PlayerArray`, so occupancy can never drift from a separately-maintained list. |
+| `ATramGameMode` | `TramGameMode.h/.cpp` | Server-only. `TryAssignTramSlot` is the one place slot decisions are made: releases any slot the rider already holds, validates a requested slot (range + occupancy), auto-falls-back to another free slot unless `bStrictSlotRequests` is set, and reports failure (no free slots) without corrupting state. Also wires `PlayerStateClass`/`GameStateClass`/`PlayerControllerClass` to the Tram classes, and frees a rider's slot implicitly on `Logout` (occupancy is derived live, so there is nothing extra to clean up). |
+| `ATramPlayerController` | `TramPlayerController.h/.cpp` | Owns the Server RPC (`ServerRequestTramSlot`) since, unlike the level-placed tram Actor, a PlayerController has a real owning connection. `BeginPlay` resolves an initial desired slot from `-TramSlot=N` on the command line, then `[TramSystem] PreferredSlot=` in ini config, else requests automatic assignment. `RequestTramSlot(int32)` is `BlueprintCallable` for an in-game slot-picker UI (the widget itself is a host-project concern, out of plugin scope). |
+
+The listen server's own local rider goes through the identical RPC path (a Server RPC called
+from a locally-owned connection just executes in-process), so there is no special-cased host
+camera/slot logic - satisfying Objective 24.
+
+**Duplicate-slot prevention** falls out of the single-threaded game-tick execution model: slot
+assignment always runs inside `TryAssignTramSlot` on the server, which re-checks occupancy at
+the moment it decides, so two simultaneous requests cannot both win the same slot - the second
+one sees it already taken and (by default) falls back automatically.
+
 ## Determinism model (why this satisfies the seam-consistency requirement)
 
 The component never integrates `DeltaTime` frame-over-frame. Instead:
 
-1. The authority (server, once Phase 2 lands) holds one `FTramMotionState` "anchor".
+1. The authority (server) holds one `FTramMotionState` "anchor".
 2. **Every** machine — including the authority's own actor movement — computes current
    distance/speed by evaluating `Evaluate(anchor, Now - anchor.ServerTimestamp)`, a
    deterministic multi-segment closed-form walk (`TramMotionMath::AdvanceTowardTarget`
    applied per segment, handling segment-boundary target-speed changes).
 3. The anchor is periodically re-published (`SnapshotPublishIntervalSeconds`) and immediately
    re-published on every discrete state change (Launch/Pause/Resume/Stop). This bounds
-   extrapolation error and becomes the network replication point in Phase 2.
+   extrapolation error and is the network replication point (Phase 2).
 
 Because step 2 is pure math over shared inputs, two machines holding the *same anchor* and
 querying at the *same synchronized time* compute bit-for-bit identical distance/speed — the
@@ -118,6 +140,13 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
 - The tram never reverses (speeds/rates are treated as non-negative).
 - `ATramSplineRoute` is level-placed static data and is not itself replicated; only the
   `FTramMotionState` derived from it needs to travel over the network (Phase 2).
+- Default slot-conflict behavior favors automatic fallback over rejection
+  (`bStrictSlotRequests = false`), per Objective 8's stated default; strict rejection is
+  available as a per-installation toggle on `ATramGameMode`.
+- `-TramSlot=N` and `[TramSystem] PreferredSlot=` are read once, at `PlayerController::BeginPlay`,
+  on the locally-controlling machine only (`IsLocalController()`) - a remote client's command
+  line/config is never visible to the server, so this must happen client-side and be sent up
+  via RPC, not read server-side (Phase 3).
 
 ## Testing this phase
 

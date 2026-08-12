@@ -91,6 +91,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tram|Look")
 	void SetLookAxisMode(ETramLookAxisMode NewMode);
 
+	// Development-only simplified camera (Objective 27's "Simplified 90-degree machine camera"
+	// test mode): any PlayerController can render this rig's shared observer transform
+	// directly via SetViewTargetWithBlend(thisRig) - see ATramPlayerController::BeginPlay,
+	// which does exactly that - with a single conventional FOV, without needing a per-player
+	// Pawn or the production multi-screen projection backend (Phase 6). Not the production
+	// solution.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tram|ViewRig|Debug", meta = (ClampMin = "5.0", ClampMax = "170.0"))
+	float DebugFieldOfViewDegrees = 90.f;
+
+	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
+
 	// --- Queries: identical evaluation on every machine, server included (Objective 24) ---
 
 	UFUNCTION(BlueprintCallable, Category = "Tram|ViewRig")

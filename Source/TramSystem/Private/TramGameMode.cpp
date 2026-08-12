@@ -10,6 +10,14 @@ ATramGameMode::ATramGameMode()
 	PlayerStateClass = ATramPlayerState::StaticClass();
 	GameStateClass = ATramGameState::StaticClass();
 	PlayerControllerClass = ATramPlayerController::StaticClass();
+
+	// No per-player Pawn: the installation is one shared tram and one shared observer rig
+	// (Objective 1 - "one distributed view rig", not independent per-player viewpoints), so
+	// there is nothing for a connecting player to possess. ATramPlayerController::BeginPlay
+	// points each player's own camera at the single level-placed ATramViewRig instead.
+	// A Blueprint subclass of this GameMode that sets its own DefaultPawnClass in Class
+	// Defaults will override this - clear it there too if you run into unexpected pawns.
+	DefaultPawnClass = nullptr;
 }
 
 bool ATramGameMode::TryAssignTramSlot(APlayerState* ForPlayer, int32 DesiredSlot)

@@ -7,6 +7,10 @@ screens / 4 machines, ~15 ft circle).
 This repository **is** the plugin, not a host project: drop its contents into a host
 project's `Plugins/TramSystem/` folder to use it.
 
+**Setting it up in a level for the first time?** See [SETUP.md](SETUP.md) - GameMode wiring,
+which actors go in the level and how they reference each other, and how to run a first
+multi-window test.
+
 ## Core architectural principle
 
 The installation is **one distributed virtual observer**, not several independent
@@ -244,6 +248,13 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
 - `DisplayWidthCm`/`DisplayHeightCm` (default 70x120cm) are placeholder guesses for a portrait
   4K panel, not measured - configurable and intended to be corrected once real panel dimensions
   are known, before Phase 6 derives off-axis frustums from them (Phase 5).
+- `ATramGameMode` sets `DefaultPawnClass = nullptr`: no per-player Pawn is ever spawned, since
+  the installation is one shared tram/observer, not one viewpoint per player (Objective 1).
+  `ATramPlayerController::BeginPlay` instead calls `SetViewTargetWithBlend` on the level's one
+  `ATramViewRig`, whose new `CalcCamera` override feeds it `GetSharedObserverTransform()` with
+  a single conventional FOV (`DebugFieldOfViewDegrees`) - this is Objective 27's "simplified
+  90-degree machine camera" dev mode, explicitly not the production per-screen projection
+  (Phase 4/SETUP.md).
 
 ## Testing this phase
 

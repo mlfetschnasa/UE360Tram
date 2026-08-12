@@ -7,6 +7,10 @@ screens / 4 machines, ~15 ft circle).
 This repository **is** the plugin, not a host project: drop its contents into a host
 project's `Plugins/TramSystem/` folder to use it.
 
+**Setting it up in a level for the first time?** See [SETUP.md](SETUP.md) - GameMode wiring,
+which actors go in the level and how they reference each other, and how to run a first
+multi-window test.
+
 ## Core architectural principle
 
 The installation is **one distributed virtual observer**, not several independent

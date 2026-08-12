@@ -28,6 +28,20 @@ automatically - this is the one piece of "global" wiring the whole slot system d
 Without this step, `ATramPlayerController::RequestTramSlot` will silently fail to find an
 `ATramGameMode` (logged as a `LogTramSystem` warning) and no rider will ever get a slot.
 
+`ATramGameMode`'s constructor also sets **`DefaultPawnClass = nullptr`**. This is deliberate,
+not an oversight: the installation is one shared tram and one shared observer, not one
+viewpoint per player (Objective 1), so there is nothing for a connecting player to possess.
+Do **not** set the tram actor (or anything with a `UTramMovementComponent`) as a project's
+`DefaultPawnClass` - if the GameMode spawns one at every `PlayerStart`, you get N independent
+trams instead of one, and each spawned instance has no way to get its `Route` set (see the
+note in 3b). If you're using a Blueprint subclass of `ATramGameMode`, check its own Class
+Defaults > `DefaultPawnClass` isn't overriding this back to something - a Blueprint child's
+explicit default wins over the C++ parent's constructor value.
+
+Instead, `ATramPlayerController::BeginPlay` automatically points each connecting player's own
+camera at the one shared `ATramViewRig` in the level (`SetViewTargetWithBlend`, no Pawn
+involved) - see 3c.
+
 ## 3. Level setup - which actors point to which
 
 ```
@@ -65,13 +79,17 @@ spline editing gizmos (add/move points, set a point's type to Curve for smooth b
 
 ### 3b. Tram actor
 
-Create an Actor (Blueprint is fine) with a `UTramMovementComponent` added. Set:
+Create an Actor (Blueprint is fine, and it does **not** need to be a Pawn - a plain `Actor`
+parent is correct) with a `UTramMovementComponent` added, and place exactly **one** instance
+of it in the level. There is only ever one tram for the whole installation. Set:
 
 - **`bReplicates = true` on the actor itself** (Blueprint: Class Defaults > Replication >
   Replicates). This is the one thing `UTramMovementComponent` cannot set for you, since it's
   reusable on an arbitrary host actor class - it only logs a `LogTramSystem` warning on the
   server if you forget it, tram state will simply never reach any client.
-- `Route` on the component - point it at the `ATramSplineRoute` placed in step 3a.
+- `Route` on the component (select the placed instance in the level, not the Blueprint editor -
+  it's `EditInstanceOnly` because it references another level actor, which a Blueprint's class
+  defaults can't do) - point it at the `ATramSplineRoute` placed in step 3a.
 - `AccelerationCmss` / `DecelerationCmss` / `MaxSpeedCms` (0 = unlimited) / `StartingDistanceCms`
   as desired.
 - Leave `SnapshotPublishIntervalSeconds` and the `Correction*`/`MaxExtrapolationSeconds` fields
@@ -84,9 +102,12 @@ scaled to tram-ish proportions is enough for testing).
 
 Place one `ATramViewRig` in the level and set `TramActor` to the tram actor from 3b. Leave
 `ObserverOffset`/`LookAxisMode`/rotation-follow settings at their defaults for a first test.
-If you want to actually see through it, spawn/possess a `CameraComponent` whose transform you
-set every tick from `ATramViewRig::GetSharedObserverTransform()` (there is no built-in camera
-Pawn in the plugin yet - see the note at the end of this doc).
+Every connecting `PlayerController` automatically calls `SetViewTargetWithBlend` on this actor
+in `BeginPlay` and `ATramViewRig::CalcCamera` feeds it `GetSharedObserverTransform()` with a
+single conventional FOV (`DebugFieldOfViewDegrees`, default 90) - Objective 27's simplified
+single-camera dev mode. No Pawn, camera component, or possession of any kind is needed for a
+first test; this is explicitly a development stand-in, not the production per-screen
+projection (that's Phase 6).
 
 ### 3d. Display configuration + debug visualization (optional for a first test)
 
@@ -145,8 +166,11 @@ any UI:
 
 ## Known gaps at this stage
 
-- No camera Pawn/HUD is provided - `ATramViewRig::GetSharedObserverTransform()` is the value to
-  feed into whatever camera you use for a first-pass test; a dedicated Pawn wiring this up
-  automatically may come later, but it isn't required for the acceptance tests above.
+- No HUD is provided - `UTramMovementComponent`/`ATramViewRig`'s `GetDiagnosticSummary()` are
+  the values to print/display yourself for now (see section 6).
 - No input bindings or UMG widgets for slot selection / look control / tram commands exist yet
   (see section 5) - only the `BlueprintCallable` entry points do.
+- `ATramViewRig::CalcCamera`'s single conventional FOV (section 3c) is a development stand-in
+  for the per-screen off-axis projection Phase 6 will add - it renders one shared 90-degree
+  view for every rider rather than each machine's three actual screen frustums, so don't judge
+  seam/projection correctness from it, only tram/slot/look synchronization.

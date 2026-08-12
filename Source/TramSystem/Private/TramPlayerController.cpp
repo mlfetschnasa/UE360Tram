@@ -1,8 +1,10 @@
 #include "TramPlayerController.h"
 #include "TramGameMode.h"
 #include "TramPlayerState.h"
+#include "TramViewRig.h"
 #include "TramSystem.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/ConfigCacheIni.h"
 
@@ -13,6 +15,20 @@ void ATramPlayerController::BeginPlay()
 	if (IsLocalController())
 	{
 		RequestTramSlot(ResolveInitialDesiredSlot());
+
+		// No per-player Pawn is spawned (see ATramGameMode) - every rider's camera targets
+		// the one shared ATramViewRig directly instead (Objective 27's simplified single-
+		// camera dev mode, via ATramViewRig::CalcCamera). This only affects this machine's
+		// own local view, so it's resolved locally rather than over the network, same as
+		// ResolveInitialDesiredSlot() above.
+		if (AActor* Rig = UGameplayStatics::GetActorOfClass(GetWorld(), ATramViewRig::StaticClass()))
+		{
+			SetViewTargetWithBlend(Rig, 0.f);
+		}
+		else
+		{
+			UE_LOG(LogTramSystem, Warning, TEXT("ATramPlayerController on %s found no ATramViewRig in the level to view"), *GetNameSafe(this));
+		}
 	}
 }
 

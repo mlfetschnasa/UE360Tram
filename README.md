@@ -248,6 +248,13 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
 - `DisplayWidthCm`/`DisplayHeightCm` (default 70x120cm) are placeholder guesses for a portrait
   4K panel, not measured - configurable and intended to be corrected once real panel dimensions
   are known, before Phase 6 derives off-axis frustums from them (Phase 5).
+- `ATramGameMode` sets `DefaultPawnClass = nullptr`: no per-player Pawn is ever spawned, since
+  the installation is one shared tram/observer, not one viewpoint per player (Objective 1).
+  `ATramPlayerController::BeginPlay` instead calls `SetViewTargetWithBlend` on the level's one
+  `ATramViewRig`, whose new `CalcCamera` override feeds it `GetSharedObserverTransform()` with
+  a single conventional FOV (`DebugFieldOfViewDegrees`) - this is Objective 27's "simplified
+  90-degree machine camera" dev mode, explicitly not the production per-screen projection
+  (Phase 4/SETUP.md).
 
 ## Testing this phase
 

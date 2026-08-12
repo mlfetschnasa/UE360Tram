@@ -3,6 +3,7 @@
 #include "TramSyncTime.h"
 #include "TramSystem.h"
 #include "Net/UnrealNetwork.h"
+#include "Camera/CameraTypes.h"
 
 namespace
 {
@@ -157,6 +158,14 @@ void ATramViewRig::SetLookAxisMode(ETramLookAxisMode NewMode)
 	}
 	LookAxisMode = NewMode;
 	UE_LOG(LogTramSystem, Log, TEXT("Tram look axis mode set to %s"), *ToDiagnosticString(LookAxisMode));
+}
+
+void ATramViewRig::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+	const FTransform ObserverTransform = GetSharedObserverTransform();
+	OutResult.Location = ObserverTransform.GetLocation();
+	OutResult.Rotation = ObserverTransform.GetRotation().Rotator();
+	OutResult.FOV = DebugFieldOfViewDegrees;
 }
 
 FQuat ATramViewRig::GetSharedLookRotation() const

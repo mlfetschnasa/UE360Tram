@@ -89,6 +89,34 @@ TArray<int32> UTramDisplayConfiguration::GetDisplaysForSlot(int32 SlotIndex) con
 	return TArray<int32>();
 }
 
+float UTramDisplayConfiguration::GetSlotCenterAngularOffsetDegrees(int32 SlotIndex) const
+{
+	// Circular mean (not a naive arithmetic average, which breaks near the 0/360 wraparound -
+	// e.g. displays at 350 and 10 degrees should average to 0, not 180).
+	double SumSin = 0.0;
+	double SumCos = 0.0;
+	int32 Count = 0;
+
+	for (int32 DisplayIndex : GetDisplaysForSlot(SlotIndex))
+	{
+		FTramScreenDefinition Screen;
+		if (FindScreen(DisplayIndex, Screen))
+		{
+			const double Radians = FMath::DegreesToRadians(static_cast<double>(Screen.BaseAngularPositionDegrees));
+			SumSin += FMath::Sin(Radians);
+			SumCos += FMath::Cos(Radians);
+			++Count;
+		}
+	}
+
+	if (Count == 0)
+	{
+		return 0.f;
+	}
+
+	return static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(SumSin, SumCos)));
+}
+
 int32 UTramDisplayConfiguration::GetSlotForDisplay(int32 DisplayIndex) const
 {
 	for (const FTramSlotDisplayMapping& Mapping : SlotMappings)

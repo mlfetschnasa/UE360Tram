@@ -109,6 +109,28 @@ single-camera dev mode. No Pawn, camera component, or possession of any kind is 
 first test; this is explicitly a development stand-in, not the production per-screen
 projection (that's Phase 6).
 
+**By default every machine sees the identical view** (same shared transform, no per-machine
+offset) - correct for verifying tram/look synchronization, but not useful for previewing
+different slices of the 360° circle across multiple PIE windows. To do that, set
+`ATramPlayerController::DevPreviewDisplayConfiguration` to the `UTramDisplayConfiguration`
+data asset from 3d (this is a Blueprint-class-default field, not a per-instance one - it's a
+content asset reference, not a level actor, so it can be set once on a Blueprint child of
+`ATramPlayerController` rather than per placed instance). When set, each connecting machine
+spawns its own local `ATramSlotPreviewCamera` instead of viewing the shared rig directly, which
+adds a yaw offset toward that machine's assigned slot's portion of the circle (via
+`UTramDisplayConfiguration::GetSlotCenterAngularOffsetDegrees`) - so slot 0's window looks
+toward its own displays, slot 1's window looks toward a different arc, etc. This camera is
+purely local and non-replicated; it holds no simulation state of its own, only reads the same
+shared observer transform every machine reads.
+
+### 3d0. Making the project's GameMode use a PlayerController with `DevPreviewDisplayConfiguration` set
+
+Since `ATramGameMode` wires `PlayerControllerClass` to `ATramPlayerController` directly (see
+section 2), setting `DevPreviewDisplayConfiguration` requires either a Blueprint child of
+`ATramPlayerController` (set the field in its Class Defaults, then point a Blueprint child of
+`ATramGameMode`'s `PlayerControllerClass` at it) or a small C++ subclass that sets it in its
+constructor. Leave it unset to keep the simpler "identical shared view everywhere" behavior.
+
 ### 3d. Display configuration + debug visualization (optional for a first test)
 
 In the Content Browser: Add > Miscellaneous > Data Asset > pick class `TramDisplayConfiguration`.

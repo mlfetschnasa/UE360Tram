@@ -2,6 +2,8 @@
 #include "TramGameMode.h"
 #include "TramPlayerState.h"
 #include "TramViewRig.h"
+#include "TramDisplayConfiguration.h"
+#include "TramSlotPreviewCamera.h"
 #include "TramSystem.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -21,19 +23,35 @@ void ATramPlayerController::BeginPlay()
 	{
 		RequestTramSlot(ResolveInitialDesiredSlot());
 
-		// No per-player Pawn is spawned (see ATramGameMode) - every rider's camera targets
-		// the one shared ATramViewRig directly instead (Objective 27's simplified single-
-		// camera dev mode, via ATramViewRig::CalcCamera). This only affects this machine's
-		// own local view, so it's resolved locally rather than over the network, same as
-		// ResolveInitialDesiredSlot() above.
-		if (AActor* Rig = UGameplayStatics::GetActorOfClass(GetWorld(), ATramViewRig::StaticClass()))
-		{
-			SetViewTargetWithBlend(Rig, 0.f);
-		}
-		else
+		// No per-player Pawn is spawned (see ATramGameMode) - every rider's camera targets the
+		// one shared ATramViewRig instead. This only affects this machine's own local view, so
+		// it's resolved locally rather than over the network, same as ResolveInitialDesiredSlot()
+		// above.
+		AActor* Rig = UGameplayStatics::GetActorOfClass(GetWorld(), ATramViewRig::StaticClass());
+		if (!Rig)
 		{
 			UE_LOG(LogTramSystem, Warning, TEXT("ATramPlayerController on %s found no ATramViewRig in the level to view"), *GetNameSafe(this));
+			return;
 		}
+
+		if (DevPreviewDisplayConfiguration)
+		{
+			// Objective 27's simplified single-camera-per-machine dev mode: a local, purely
+			// this-machine's-own preview camera oriented toward this rider's assigned slot,
+			// instead of every machine viewing the identical shared transform directly.
+			DevPreviewCamera = GetWorld()->SpawnActor<ATramSlotPreviewCamera>();
+			if (DevPreviewCamera)
+			{
+				DevPreviewCamera->ViewRig = Cast<ATramViewRig>(Rig);
+				DevPreviewCamera->DisplayConfiguration = DevPreviewDisplayConfiguration;
+				DevPreviewCamera->SlotIndex = GetAssignedTramSlot();
+				SetViewTargetWithBlend(DevPreviewCamera, 0.f);
+				return;
+			}
+			UE_LOG(LogTramSystem, Warning, TEXT("ATramPlayerController on %s failed to spawn its ATramSlotPreviewCamera - falling back to the shared view"), *GetNameSafe(this));
+		}
+
+		SetViewTargetWithBlend(Rig, 0.f);
 	}
 }
 
@@ -73,6 +91,11 @@ void ATramPlayerController::BindToPlayerStateSlotChanges()
 
 void ATramPlayerController::HandlePlayerStateSlotChanged(int32 NewSlotIndex)
 {
+	if (DevPreviewCamera)
+	{
+		DevPreviewCamera->SlotIndex = NewSlotIndex;
+	}
+
 	OnLocalTramSlotChanged.Broadcast(NewSlotIndex);
 }
 

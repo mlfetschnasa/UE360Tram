@@ -9,12 +9,24 @@
 #include "TramPlayerState.h"
 #include "TramPlayerController.generated.h"
 
+class UTramDisplayConfiguration;
+class ATramSlotPreviewCamera;
+
 UCLASS()
 class TRAMSYSTEM_API ATramPlayerController : public APlayerController
 {
 	GENERATED_BODY()
 
 public:
+	// Optional. If set (e.g. in a Blueprint child's Class Defaults - it's a content asset, not
+	// a level actor, so unlike Route/TramActor this does NOT need to be EditInstanceOnly),
+	// this machine spawns its own local ATramSlotPreviewCamera and views through it instead of
+	// the shared ATramViewRig directly, oriented toward its assigned slot's portion of the
+	// circle (Objective 27's simplified single-camera-per-machine dev mode). Leave unset to
+	// keep the previous "identical shared view on every machine" behavior.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Tram|Debug")
+	TObjectPtr<UTramDisplayConfiguration> DevPreviewDisplayConfiguration;
+
 	// Requests a tram slot. DesiredSlot == INDEX_NONE requests automatic assignment.
 	// Safe to call from Blueprint (e.g. an in-game slot-selection UI) at any time, not just
 	// at connect time - the server treats every call as a (re-)request.
@@ -55,4 +67,7 @@ private:
 	void HandlePlayerStateSlotChanged(int32 NewSlotIndex);
 
 	TWeakObjectPtr<ATramPlayerState> BoundPlayerState;
+
+	UPROPERTY()
+	TObjectPtr<ATramSlotPreviewCamera> DevPreviewCamera;
 };

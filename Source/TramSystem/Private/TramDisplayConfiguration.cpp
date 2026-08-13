@@ -182,3 +182,21 @@ bool UTramDisplayConfiguration::IsConfigurationValid(FString& OutError) const
 	OutError.Reset();
 	return true;
 }
+
+void UTramDisplayConfiguration::LogAllScreenTransforms() const
+{
+	UE_LOG(LogTramSystem, Log, TEXT("=== %s screen transforms (relative to observer rig origin, cm/degrees) ==="), *GetNameSafe(this));
+
+	for (const FTramScreenDefinition& Screen : Screens)
+	{
+		const FTransform LocalTransform = GetScreenLocalTransform(Screen.DisplayIndex);
+		const FVector Location = LocalTransform.GetLocation();
+		const FRotator Rotation = LocalTransform.GetRotation().Rotator();
+		const int32 OwningSlot = GetSlotForDisplay(Screen.DisplayIndex);
+
+		UE_LOG(LogTramSystem, Log, TEXT("Display %d (Slot %d): Location=(X=%.2f,Y=%.2f,Z=%.2f) Rotation=(Pitch=%.2f,Yaw=%.2f,Roll=%.2f) Size=(W=%.2f,H=%.2f)"),
+			Screen.DisplayIndex, OwningSlot, Location.X, Location.Y, Location.Z, Rotation.Pitch, Rotation.Yaw, Rotation.Roll, DisplayWidthCm, DisplayHeightCm);
+	}
+
+	UE_LOG(LogTramSystem, Log, TEXT("=== end screen transforms (%d screens) ==="), Screens.Num());
+}

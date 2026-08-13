@@ -21,7 +21,13 @@ projects. Seam consistency between neighboring displays is the top priority — 
 
 ## Module layout
 
-Single runtime module: `TramSystem`. No editor-only dependencies; safe in packaged builds.
+Two runtime modules:
+- `TramSystem` - tram simulation, networking, rider slots, the shared observer rig, and display
+  geometry data. No editor-only dependencies; safe in packaged builds. Never references
+  DisplayCluster.
+- `TramSystemDisplayCluster` - the nDisplay/DisplayCluster production rendering bridge (Phase
+  6). Isolated into its own module specifically so a project that doesn't use nDisplay never
+  needs to build or reference it (Objective 19).
 
 ## Status
 
@@ -29,8 +35,8 @@ Single runtime module: `TramSystem`. No editor-only dependencies; safe in packag
 - [x] **Phase 2 — Network synchronization**
 - [x] **Phase 3 — Rider/view slots**
 - [x] **Phase 4 — Shared observer rig**
-- [x] **Phase 5 — Display geometry model** (this commit)
-- [ ] Phase 6 — nDisplay/DisplayCluster production backend
+- [x] **Phase 5 — Display geometry model**
+- [x] **Phase 6 — nDisplay/DisplayCluster production backend** (this commit, first slice - see caveat below)
 - [ ] Phase 7 — Calibration & hardening
 
 ## Phase 1 contents
@@ -221,6 +227,47 @@ centered at `ObserverHeightCm` - not yet using per-screen physical width/height 
 off-axis frustum (that's Phase 6, once real screen dimensions and Unreal's chosen multi-display
 backend are known); `DisplayWidthCm`/`DisplayHeightCm` are carried now so Phase 6 doesn't need
 a data model change, and already size the debug-visualization boxes.
+
+## Phase 6 contents
+
+**Architectural decision: nDisplay stays rendering-only and never touches the sync/slot/
+simulation layer.** nDisplay is fundamentally a separate system that controls per-process
+window/viewport/projection setup, but a project using it still runs completely ordinary UE
+networking underneath (same `UWorld`, same `GameMode`, same replication). So `ATramGameMode`,
+`ATramPlayerState`, slot assignment, and tram simulation don't change at all for Phase 6 - this
+directly satisfies Objective 19 ("keep the tram/view synchronization architecture independent
+enough that the rendering backend can be changed if necessary"). That leaves exactly one
+integration point: nDisplay's "stage" (`ADisplayClusterRootActor`, which owns the per-screen
+projection geometry as child components in its own local space) needs to be moved, every
+frame, to match `ATramViewRig::GetSharedObserverTransform()`.
+
+| Type | File | Responsibility |
+|---|---|---|
+| `UTramDisplayClusterViewSync` | `TramSystemDisplayCluster/TramDisplayClusterViewSync.h/.cpp` | The entire integration: each Tick, moves the level's `ADisplayClusterRootActor` to `GetSharedObserverTransform()` via plain `SetActorLocationAndRotation` - conceptually identical to how `ATramSlotPreviewCamera`/`UTramMovementComponent` already move an actor to match a computed transform each tick. |
+| `UTramDisplayConfiguration::LogAllScreenTransforms` | `TramSystem/TramDisplayConfiguration.h/.cpp` | A read-only diagnostic (no DisplayCluster dependency) that logs every screen's local transform and size in a copy-paste-friendly format, to help hand-author nDisplay's Screen components without doing the circle trigonometry by hand. |
+
+**Deliberately NOT built: automatic generation of nDisplay's cluster config file.** nDisplay
+configs (node IPs/topology, per-screen geometry, window/viewport→monitor mapping) are normally
+authored once per installation via nDisplay's own in-editor Configurator tool, and the exact
+current JSON schema (UE 5.7's `UDisplayClusterConfigurationData` layout) carries enough
+version-drift risk that guessing it blind seemed like a worse trade than being explicit that
+this is a manual, one-time setup step - see SETUP.md for how the values already in
+`UTramDisplayConfiguration` (`CircleRadiusCm`, `DisplayWidthCm`/`HeightCm`, and each screen's
+transform via `LogAllScreenTransforms`) map onto that tool's fields.
+
+**Module isolation.** `TramSystemDisplayCluster` is a second module in the same `.uplugin`
+(not a separate plugin - simpler for a project to manage one plugin rather than two), but with
+its own `Build.cs` depending on `DisplayCluster` - the core `TramSystem` module has zero
+DisplayCluster references anywhere. A project that never enables nDisplay is unaffected; this
+module can even be deleted from the `Modules` array without touching `TramSystem` at all.
+
+**Honesty note on this phase specifically:** unlike Phases 1-5, which use only core
+`Engine`/`GameFramework` APIs I'm highly confident about, this phase touches nDisplay - a less
+commonly used engine plugin with real API drift across UE versions - and was written without
+engine access to verify compilation. The nDisplay-facing surface is kept deliberately minimal
+(one class name, `ADisplayClusterRootActor`, moved via the ordinary `AActor` API) specifically
+to keep the blast radius of "this needs adjusting for your exact engine build" as small as
+possible if it doesn't compile as-is.
 
 ## Determinism model (why this satisfies the seam-consistency requirement)
 

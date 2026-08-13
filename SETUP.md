@@ -1,9 +1,10 @@
 # Setup Guide
 
 How to wire the `TramSystem` plugin into a host project for the first time. This assumes the
-plugin has already been compiled once (see README.md's "Testing this phase" notes) and is
-scoped to getting Phases 1-5 running in ordinary Unreal windows - no nDisplay/multi-monitor
-setup here.
+plugin has already been compiled once (see README.md's "Testing this phase" notes). Sections
+1-6 get Phases 1-5 running in ordinary Unreal windows, no nDisplay/multi-monitor hardware
+needed; section 7 covers the Phase 6 nDisplay production bridge, which does need that hardware
+(or at least the nDisplay plugin enabled) to actually test.
 
 ## 1. Install the plugin
 
@@ -212,13 +213,60 @@ Both your bound event and the immediate poll should feed the same handling logic
 same `Print String`) - it's fine, and expected, for it to fire twice with the same value if a
 change happens to land exactly between steps 1 and 2.
 
+## 7. Phase 6: nDisplay production bridge (needs the nDisplay plugin, and ideally the real hardware)
+
+This section covers wiring up the **production** multi-display path. It's independent of
+everything above - your tram/slot/look testing setup doesn't change at all.
+
+### 7a. Enable nDisplay and add the bridge component
+
+Edit > Plugins > search "nDisplay" > enable (it ships with the engine, no separate download).
+Regenerate project files and build - this pulls in the new `TramSystemDisplayCluster` module,
+which only builds if `DisplayCluster` is available, so this step is required before the module
+will compile.
+
+Place an `ADisplayClusterRootActor` in your level (this is nDisplay's own actor - see its
+documentation for the full Configurator workflow in 7b) and add a `UTramDisplayClusterViewSync`
+component to any convenient actor (or to the root actor itself). Set its `ViewRig` to your
+`ATramViewRig` and leave `RootActor` unset (it auto-resolves via `GetActorOfClass` in
+`BeginPlay`, same pattern as `ATramPlayerController` finding the view rig). That's the entire
+runtime integration - every frame, it moves the root actor to
+`ATramViewRig::GetSharedObserverTransform()`.
+
+### 7b. Authoring the nDisplay cluster config
+
+This plugin does **not** generate nDisplay's config for you (see README.md's Phase 6 section
+for why - version-schema risk). Use nDisplay's own in-editor Configurator tool, and pull the
+numbers it asks for from your `UTramDisplayConfiguration` data asset:
+
+- **Circle radius / observer height**: `CircleRadiusCm`/`ObserverHeightCm` on the data asset.
+- **Per-screen size**: `DisplayWidthCm`/`DisplayHeightCm`.
+- **Per-screen transform** (position/rotation relative to the stage origin): click
+  `LogAllScreenTransforms` in the data asset's Details panel (another `CallInEditor` button,
+  parameterless like `GenerateDefaultLayoutButton`) and read the values from the Output Log,
+  filtered to `LogTramSystem` - one line per screen, formatted for direct transcription into
+  the Configurator's per-screen Location/Rotation/Size fields.
+- **Node ↔ machine mapping**: nDisplay's own per-node config (host IP, `-dc_node=` launch arg)
+  is separate from this plugin's `-TramSlot=` mechanism - make sure whoever sets up each
+  physical PC's launch shortcut keeps both consistent for that machine (e.g. the PC configured
+  as nDisplay node 0 should also launch with `-TramSlot=0`). There is no automatic
+  cross-checking between the two yet.
+
 ## Known gaps at this stage
 
 - No HUD is provided - `UTramMovementComponent`/`ATramViewRig`'s `GetDiagnosticSummary()` are
   the values to print/display yourself for now (see section 6).
 - No input bindings or UMG widgets for slot selection / look control / tram commands exist yet
   (see section 5) - only the `BlueprintCallable` entry points do.
-- `ATramViewRig::CalcCamera`'s single conventional FOV (section 3c) is a development stand-in
-  for the per-screen off-axis projection Phase 6 will add - it renders one shared 90-degree
-  view for every rider rather than each machine's three actual screen frustums, so don't judge
-  seam/projection correctness from it, only tram/slot/look synchronization.
+- `ATramViewRig::CalcCamera`'s single conventional FOV (section 3c) - and
+  `ATramSlotPreviewCamera`'s per-slot yaw offset on top of it - are development stand-ins for
+  nDisplay's actual per-screen off-axis projection (section 7). Neither renders each machine's
+  three real screen frustums, so don't judge seam/projection correctness from PIE testing,
+  only tram/slot/look synchronization; seam correctness needs to be judged against the real
+  nDisplay output.
+- No automatic generation of nDisplay's cluster config, and no automatic cross-check between
+  its per-node config and this plugin's per-slot config (section 7b) - both are currently
+  manual, parallel setup steps an installer has to keep consistent by hand.
+- `UTramDisplayClusterViewSync` (section 7a) was written without engine access to verify
+  compilation against nDisplay's actual UE 5.7 headers - see README.md's Phase 6 section for
+  the specifics and why the risk is scoped to just that one file.

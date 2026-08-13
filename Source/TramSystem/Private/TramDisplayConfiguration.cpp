@@ -1,6 +1,11 @@
 #include "TramDisplayConfiguration.h"
 #include "TramSystem.h"
 
+void UTramDisplayConfiguration::GenerateDefaultLayoutButton()
+{
+	GenerateDefaultLayout(3);
+}
+
 void UTramDisplayConfiguration::GenerateDefaultLayout(int32 DisplaysPerSlot)
 {
 	Screens.Reset();

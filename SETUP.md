@@ -134,9 +134,12 @@ constructor. Leave it unset to keep the simpler "identical shared view everywher
 ### 3d. Display configuration + debug visualization (optional for a first test)
 
 In the Content Browser: Add > Miscellaneous > Data Asset > pick class `TramDisplayConfiguration`.
-Open it, set `DisplayCount`/`CircleRadiusCm`/etc., then click the **Generate Default Layout**
-button in its Details panel (it's `CallInEditor`) to populate `Screens`/`SlotMappings` with an
-evenly-spaced default you can then hand-calibrate.
+Open it, set `DisplayCount`/`CircleRadiusCm`/etc., then click the **Generate Default Layout (3
+Per Slot)** button in its Details panel to populate `Screens`/`SlotMappings` with an
+evenly-spaced default (3 displays/slot) you can then hand-calibrate. (`GenerateDefaultLayout`
+itself takes a `DisplaysPerSlot` argument for other configurations, but `CallInEditor` only
+generates a Details-panel button for parameterless functions, hence the dedicated button for
+the common case - call `GenerateDefaultLayout` directly from Blueprint/C++ for any other value.)
 
 Add a `UTramDisplayDebugComponent` to any actor (the `ATramViewRig` from 3c is a convenient
 place - just point its `ViewRig` field at itself). Set `DisplayConfiguration` to the data asset

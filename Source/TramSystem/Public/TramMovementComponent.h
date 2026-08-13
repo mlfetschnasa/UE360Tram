@@ -169,6 +169,17 @@ private:
 	double LastCorrectionAmountCm = 0.0;
 	mutable double LastStaleSnapshotWarningTime = -1000.0;
 
+	// The anchor CurrentSnapshot held immediately before its most recent update (set in
+	// PublishSnapshot on the authority, and from OnRep_CurrentSnapshot's OldSnapshot parameter
+	// on every other machine - both are "whatever CurrentSnapshot was right before this
+	// change", kept in sync by construction). Retained so a backward-looking query - e.g.
+	// ATramViewRig's rotation-follow lag, which asks for "a moment ago" - can be answered
+	// correctly even when that moment falls just before the current anchor's own timestamp
+	// (e.g. immediately after a periodic re-anchor), instead of clamping to "frozen at the
+	// instant of re-anchor". See GetAuthoritativeTransformAtServerTime.
+	FTramMotionState PreviousSnapshotForHistory;
+	bool bHasPreviousSnapshotForHistory = false;
+
 	bool HasControlAuthority() const;
 
 	// Evaluates CurrentSnapshot at QueryServerTime (applying the active correction blend, if
@@ -179,8 +190,11 @@ private:
 	// from Snapshot by ElapsedSeconds using deterministic rate-based kinematics.
 	void Evaluate(const FTramMotionState& Snapshot, double ElapsedSeconds, double& OutDistanceCm, double& OutSpeedCms, int32& OutSegmentIndex) const;
 
-	// Evaluate() with the (Now - Snapshot.ServerTimestamp) elapsed time clamped to
-	// MaxExtrapolationSeconds and never negative; logs a throttled warning if clamping occurred.
+	// Evaluate() with the (QueryServerTime - Snapshot.ServerTimestamp) elapsed time clamped to
+	// [0, MaxExtrapolationSeconds] and a throttled warning logged if clamping occurred - but
+	// only while Snapshot.MovementState == Running, since elapsed time doesn't affect the
+	// result at all otherwise (Evaluate() ignores it), so clamping/warning outside Running
+	// would only produce false alarms.
 	void EvaluateClamped(const FTramMotionState& Snapshot, double QueryServerTime, double& OutDistanceCm, double& OutSpeedCms, int32& OutSegmentIndex) const;
 
 	// Assigns CurrentSnapshot and resets the publish timer. The single point through which the

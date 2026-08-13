@@ -139,6 +139,22 @@ transient correction blend (Phase 2), so the smoothing input is bit-identical ac
 even during a rare correction event; only the position-only blend itself is allowed to be
 briefly client-local.
 
+**Fixed during testing:** `GetAuthoritativeTransformAtServerTime`'s query time
+(`Now - RotationFollowLagSeconds`) regularly fell *before* `CurrentSnapshot`'s own timestamp -
+every periodic re-anchor (`SnapshotPublishIntervalSeconds`, default 0.5s) resets that timestamp
+to "now", and the default lag (0.4s) is nearly as large as that interval, so the query landed
+in the past relative to the brand-new anchor for roughly 80% of every republish cycle. The
+original code clamped that to "frozen at the instant of re-anchor," which produced a visible
+freeze-then-snap pattern at a ~2Hz cadence - identical on every machine (same server-timed
+republish schedule), which is why it looked like consistently jerky rotation rather than
+per-client jitter. Fixed by retaining the anchor `CurrentSnapshot` held immediately before its
+most recent update (`PreviousSnapshotForHistory`, set from `PublishSnapshot` on the authority
+and from `OnRep_CurrentSnapshot`'s `OldSnapshot` parameter everywhere else) and answering a
+backward-looking query against it when the query falls in its range instead of clamping. This
+correctly covers any lag up to roughly one full publish interval; a `RotationFollowLagSeconds`
+much larger than `SnapshotPublishIntervalSeconds` would still hit the old clamped behavior for
+the portion of the query beyond that single interval of retained history.
+
 **Shared operator look rotation (Objective 12)** reuses the exact "anchor + deterministic
 evaluation" pattern from tram motion, applied to rotation instead of distance: the server
 accumulates mouse deltas (only on axes enabled by the current `LookAxisMode`, other axes

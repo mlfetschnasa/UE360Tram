@@ -155,9 +155,21 @@ FTransform UTramMovementComponent::GetAuthoritativeTransformAtServerTime(double 
 		return FTransform::Identity;
 	}
 
+	// If the query falls before CurrentSnapshot's own timestamp (e.g. a rotation-follow lag
+	// query issued shortly after a periodic re-anchor) and the retained previous anchor covers
+	// that moment, answer against it instead - CurrentSnapshot alone cannot correctly answer a
+	// question about a time before it started existing.
+	const FTramMotionState* SnapshotToUse = &CurrentSnapshot;
+	if (bHasPreviousSnapshotForHistory
+		&& QueryServerTime < CurrentSnapshot.ServerTimestamp
+		&& QueryServerTime >= PreviousSnapshotForHistory.ServerTimestamp)
+	{
+		SnapshotToUse = &PreviousSnapshotForHistory;
+	}
+
 	double Distance, Speed;
 	int32 Segment;
-	EvaluateClamped(CurrentSnapshot, QueryServerTime, Distance, Speed, Segment);
+	EvaluateClamped(*SnapshotToUse, QueryServerTime, Distance, Speed, Segment);
 
 	return Route->GetTransformAtDistanceCm(static_cast<float>(Distance));
 }
@@ -297,22 +309,30 @@ void UTramMovementComponent::EvaluateClamped(const FTramMotionState& Snapshot, d
 {
 	double Elapsed = QueryServerTime - Snapshot.ServerTimestamp;
 
-	if (Elapsed > MaxExtrapolationSeconds)
+	// Only Running actually depends on how large Elapsed is - Evaluate() ignores it entirely
+	// for WaitingForLaunch/Paused/Stopped (the result is frozen regardless). Skip clamping and
+	// the staleness warning outside Running, so simply taking a while to press Launch (or
+	// sitting Paused) never produces a false "network/replication health" warning.
+	if (Snapshot.MovementState == ETramMovementState::Running)
 	{
-		if (QueryServerTime - LastStaleSnapshotWarningTime > 1.0)
+		if (Elapsed > MaxExtrapolationSeconds)
 		{
-			UE_LOG(LogTramSystem, Warning, TEXT("Tram snapshot on %s is %.2fs stale (cap %.2fs) - clamping extrapolation. Check network/replication health."),
-				*GetNameSafe(GetOwner()), Elapsed, MaxExtrapolationSeconds);
-			LastStaleSnapshotWarningTime = QueryServerTime;
+			if (QueryServerTime - LastStaleSnapshotWarningTime > 1.0)
+			{
+				UE_LOG(LogTramSystem, Warning, TEXT("Tram snapshot on %s is %.2fs stale (cap %.2fs) - clamping extrapolation. Check network/replication health."),
+					*GetNameSafe(GetOwner()), Elapsed, MaxExtrapolationSeconds);
+				LastStaleSnapshotWarningTime = QueryServerTime;
+			}
+			Elapsed = MaxExtrapolationSeconds;
 		}
-		Elapsed = MaxExtrapolationSeconds;
-	}
-	else if (Elapsed < 0.0)
-	{
-		// Synchronized time moving backward relative to this anchor (clock correction, or a
-		// snapshot arriving stamped slightly in what looks like "the future" due to jitter):
-		// hold at the anchor rather than evaluating a negative-time motion.
-		Elapsed = 0.0;
+		else if (Elapsed < 0.0)
+		{
+			// Synchronized time moving backward relative to this anchor (clock correction, or
+			// a genuinely un-answerable query - see GetAuthoritativeTransformAtServerTime for
+			// the common case, which is handled before reaching here): hold at the anchor
+			// rather than evaluating a negative-time motion.
+			Elapsed = 0.0;
+		}
 	}
 
 	Evaluate(Snapshot, Elapsed, OutDistanceCm, OutSpeedCms, OutSegmentIndex);
@@ -320,6 +340,9 @@ void UTramMovementComponent::EvaluateClamped(const FTramMotionState& Snapshot, d
 
 void UTramMovementComponent::PublishSnapshot(const FTramMotionState& NewSnapshot)
 {
+	PreviousSnapshotForHistory = CurrentSnapshot;
+	bHasPreviousSnapshotForHistory = true;
+
 	CurrentSnapshot = NewSnapshot;
 	TimeSinceLastPublish = 0.0;
 
@@ -349,6 +372,13 @@ void UTramMovementComponent::OnRep_CurrentSnapshot(FTramMotionState OldSnapshot)
 			*GetNameSafe(GetOwner()), *ToDiagnosticString(CurrentSnapshot.MovementState), CurrentSnapshot.DistanceAlongSplineCm);
 		return;
 	}
+
+	// OldSnapshot is a real previous anchor (not the first-ever placeholder, handled above) -
+	// retain it so backward-looking queries can be answered correctly. See
+	// GetAuthoritativeTransformAtServerTime and the PublishSnapshot equivalent on the
+	// authority side.
+	PreviousSnapshotForHistory = OldSnapshot;
+	bHasPreviousSnapshotForHistory = true;
 
 	// Prediction error = what the new authoritative snapshot says vs. what this machine would
 	// have predicted (from its old anchor) for that same synchronized timestamp.

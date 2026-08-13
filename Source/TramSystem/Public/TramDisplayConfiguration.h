@@ -88,4 +88,13 @@ public:
 	// display to be covered by a slot (missing riders are expected - Objective 23).
 	UFUNCTION(BlueprintCallable, Category = "Tram|Display")
 	bool IsConfigurationValid(FString& OutError) const;
+
+	// Logs every screen's local transform (location/rotation relative to the observer rig's
+	// origin) and size in a clear, copy-paste-friendly format. Intended to help hand-author an
+	// nDisplay cluster config's Screen components (Phase 6) - see SETUP.md - without doing the
+	// circle trigonometry by hand or risking a transcription error. Purely a read-only
+	// diagnostic; does not touch DisplayCluster in any way, so it works with or without that
+	// plugin enabled.
+	UFUNCTION(CallInEditor, Category = "Tram|Display")
+	void LogAllScreenTransforms() const;
 };

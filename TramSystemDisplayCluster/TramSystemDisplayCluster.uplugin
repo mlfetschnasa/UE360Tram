@@ -1,0 +1,35 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "Tram System - DisplayCluster Bridge",
+	"Description": "Bridges TramSystem's synchronized shared observer rig to Epic's nDisplay/DisplayCluster rendering system for production multi-display output. Separate from the core Tram System plugin so a project that doesn't use nDisplay never needs to enable this at all.",
+	"Category": "Simulation",
+	"CreatedBy": "",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EngineVersion": "5.7.0",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "TramSystemDisplayCluster",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "TramSystem",
+			"Enabled": true
+		},
+		{
+			"Name": "DisplayCluster",
+			"Enabled": true
+		}
+	]
+}

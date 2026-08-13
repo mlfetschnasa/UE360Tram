@@ -9,9 +9,10 @@
 // match a computed transform each tick, just applied to nDisplay's root actor instead of a
 // camera or the tram mesh.
 //
-// Deliberately isolated into its own module (see TramSystemDisplayCluster.Build.cs) so a
-// project that doesn't use nDisplay never needs to reference this at all, and the core
-// TramSystem module never depends on DisplayCluster (Objective 19).
+// Deliberately isolated into its own plugin (TramSystemDisplayCluster.uplugin, separate from
+// TramSystem.uplugin - see that file's Build.cs comment for why a second module alone wasn't
+// enough) so a project that doesn't use nDisplay never needs to enable this at all, and the
+// core TramSystem plugin never depends on DisplayCluster (Objective 19).
 //
 // IMPORTANT: written from general knowledge of nDisplay's stable public API (ADisplayClusterRootActor
 // has been the root-actor class since nDisplay's UE4 days) without access to an Unreal Engine

@@ -67,6 +67,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Tram|Display")
 	int32 GetSlotForDisplay(int32 DisplayIndex) const;
 
+	// Circular mean of the given slot's displays' BaseAngularPositionDegrees - a single
+	// representative "which way is this slot facing" angle. Used by the simplified
+	// single-camera-per-machine dev mode (Objective 27) to orient each machine's preview
+	// camera toward its own slice of the circle; returns 0 if the slot has no displays.
+	UFUNCTION(BlueprintCallable, Category = "Tram|Display")
+	float GetSlotCenterAngularOffsetDegrees(int32 SlotIndex) const;
+
 	// Validates internal consistency: every screen's DisplayIndex in range and unique, every
 	// slot mapping's display indices assigned to at most one slot. Does not require every
 	// display to be covered by a slot (missing riders are expected - Objective 23).

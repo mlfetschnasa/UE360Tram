@@ -180,6 +180,21 @@ implemented (`GetDiagnosticSummary()` on both `UTramMovementComponent` and `ATra
 exist and can back a HUD, but no HUD/console command consumes them yet) - deferred to Phase 7
 (hardening) rather than built speculatively now.
 
+**Added after initial testing: `ATramSlotPreviewCamera`.** Objective 27 actually specifies a
+simplified camera **per machine** ("allow each machine to render one approximate 90-degree
+conventional camera"), not one identical shared camera for every machine - the first pass only
+built the latter, so every PIE window showed the same view, which surfaced as a "both windows
+look identical" report during testing. `ATramSlotPreviewCamera` is a purely local,
+non-replicated actor (no simulation state of its own) that `ATramPlayerController` optionally
+spawns per machine (opt-in via `DevPreviewDisplayConfiguration`, since it's a content-asset
+reference, not a level actor, so it can be set once on a Blueprint child of
+`ATramPlayerController` rather than needing per-instance level wiring). It reads the same
+`GetSharedObserverTransform()` every machine reads and adds a yaw offset toward its assigned
+slot's portion of the circle, computed as the circular mean of that slot's displays'
+`BaseAngularPositionDegrees` (`UTramDisplayConfiguration::GetSlotCenterAngularOffsetDegrees` -
+a circular, not arithmetic, mean, since a naive average breaks near the 0/360 wraparound).
+Still explicitly Objective 27's dev/test tool, not Phase 6's off-axis per-screen projection.
+
 ## Phase 5 contents
 
 Physical display geometry as data, kept independent of both tram simulation and networking

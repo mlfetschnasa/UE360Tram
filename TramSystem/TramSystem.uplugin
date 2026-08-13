@@ -20,11 +20,6 @@
 			"Name": "TramSystem",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "TramSystemDisplayCluster",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
 		}
 	]
 }

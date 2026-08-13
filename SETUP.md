@@ -8,9 +8,13 @@ needed; section 7 covers the Phase 6 nDisplay production bridge, which does need
 
 ## 1. Install the plugin
 
-Copy (or symlink) this repository into the host project's `Plugins/TramSystem/` folder, then
-open the `.uproject` and enable it (Edit > Plugins > search "Tram System" > enable) if it isn't
-picked up automatically. Regenerate project files and build.
+Copy (or symlink) this repository's `TramSystem/` folder into the host project's
+`Plugins/TramSystem/` folder, then open the `.uproject` and enable it (Edit > Plugins > search
+"Tram System" > enable) if it isn't picked up automatically. Regenerate project files and build.
+
+Only copy `TramSystemDisplayCluster/` (into a sibling `Plugins/TramSystemDisplayCluster/`
+folder) if you're doing the Phase 6 nDisplay setup in section 7 - it's a separate, optional
+plugin and Phases 1-5 don't need it at all.
 
 ## 2. Set the project's GameMode
 
@@ -220,10 +224,15 @@ everything above - your tram/slot/look testing setup doesn't change at all.
 
 ### 7a. Enable nDisplay and add the bridge component
 
-Edit > Plugins > search "nDisplay" > enable (it ships with the engine, no separate download).
-Regenerate project files and build - this pulls in the new `TramSystemDisplayCluster` module,
-which only builds if `DisplayCluster` is available, so this step is required before the module
-will compile.
+Copy `TramSystemDisplayCluster/` into `Plugins/TramSystemDisplayCluster/` if you haven't
+already (section 1). Its own `.uplugin` declares plugin-level dependencies on both `TramSystem`
+and `DisplayCluster` (nDisplay's own plugin, which ships with the engine - no separate
+download), so enabling **"Tram System - DisplayCluster Bridge"** under Edit > Plugins should
+bring `DisplayCluster` along with it automatically. If it doesn't, or if you see a "module could
+not be loaded" error at startup, explicitly enable "nDisplay" under Edit > Plugins too, then
+restart the editor - a plugin's own declared dependencies aren't always a substitute for
+manually confirming a dependency is enabled, especially the first time. Regenerate project
+files and build after enabling.
 
 Place an `ADisplayClusterRootActor` in your level (this is nDisplay's own actor - see its
 documentation for the full Configurator workflow in 7b) and add a `UTramDisplayClusterViewSync`

@@ -4,8 +4,10 @@ Unreal Engine 5.7 C++ plugin implementing a server-authoritative, spline-driven 
 synchronized shared-observer rig for a 360° multi-display installation (12 portrait 4K
 screens / 4 machines, ~15 ft circle).
 
-This repository **is** the plugin, not a host project: drop its contents into a host
-project's `Plugins/TramSystem/` folder to use it.
+This repository **is** the plugin(s), not a host project: drop `TramSystem/` into a host
+project's `Plugins/TramSystem/` folder to use it. `TramSystemDisplayCluster/` is a second,
+optional, sibling plugin (`Plugins/TramSystemDisplayCluster/`) - see "Module/plugin layout"
+below for why it's separate.
 
 **Setting it up in a level for the first time?** See [SETUP.md](SETUP.md) - GameMode wiring,
 which actors go in the level and how they reference each other, and how to run a first
@@ -19,15 +21,22 @@ authoritative state through the same code path and differs only in which physica
 projects. Seam consistency between neighboring displays is the top priority — see
 "Determinism model" below.
 
-## Module layout
+## Module/plugin layout
 
-Two runtime modules:
-- `TramSystem` - tram simulation, networking, rider slots, the shared observer rig, and display
-  geometry data. No editor-only dependencies; safe in packaged builds. Never references
-  DisplayCluster.
-- `TramSystemDisplayCluster` - the nDisplay/DisplayCluster production rendering bridge (Phase
-  6). Isolated into its own module specifically so a project that doesn't use nDisplay never
-  needs to build or reference it (Objective 19).
+Two separate plugins, each a top-level folder in this repo:
+- **`TramSystem/`** (`TramSystem.uplugin`) - tram simulation, networking, rider slots, the
+  shared observer rig, and display geometry data. No editor-only dependencies; safe in packaged
+  builds. Never references DisplayCluster. This is the only plugin most testing (Phases 1-5)
+  needs.
+- **`TramSystemDisplayCluster/`** (`TramSystemDisplayCluster.uplugin`) - the nDisplay/
+  DisplayCluster production rendering bridge (Phase 6). A genuinely separate plugin, not just a
+  second module in `TramSystem.uplugin` - that was tried first and doesn't work: UE's
+  plugin-dependency mechanism (which guarantees `DisplayCluster` is enabled and loaded before a
+  dependent module tries to load) only operates at the plugin level via a `.uplugin`'s
+  `"Plugins"` array, not per-module, so `TramSystemDisplayCluster.uplugin` declares real plugin
+  dependencies on both `TramSystem` and `DisplayCluster`. A project that doesn't use nDisplay
+  simply never enables this plugin (Objective 19); `TramSystem` itself is completely unaffected
+  either way.
 
 ## Status
 
@@ -255,11 +264,21 @@ this is a manual, one-time setup step - see SETUP.md for how the values already 
 `UTramDisplayConfiguration` (`CircleRadiusCm`, `DisplayWidthCm`/`HeightCm`, and each screen's
 transform via `LogAllScreenTransforms`) map onto that tool's fields.
 
-**Module isolation.** `TramSystemDisplayCluster` is a second module in the same `.uplugin`
-(not a separate plugin - simpler for a project to manage one plugin rather than two), but with
-its own `Build.cs` depending on `DisplayCluster` - the core `TramSystem` module has zero
-DisplayCluster references anywhere. A project that never enables nDisplay is unaffected; this
-module can even be deleted from the `Modules` array without touching `TramSystem` at all.
+**Module/plugin isolation, and a fix found in testing.** `TramSystemDisplayCluster` was
+initially built as a second module inside `TramSystem.uplugin` (sharing one plugin, two
+modules), reasoning that it was simpler for a project to manage one plugin rather than two.
+That doesn't actually work: the module compiled fine (UBT can resolve a `Build.cs` dependency
+on `DisplayCluster` just by finding it on disk, which it can regardless of whether any project
+has that plugin enabled), but failed to *load* at editor startup ("module could not be
+loaded"). The reason: UE's plugin-dependency mechanism, which is what guarantees a dependency
+plugin's modules are enabled and loaded before a dependent module tries to load, only exists at
+the `.uplugin` level (a `"Plugins"` array), not per-module - there is no way to declare "only
+this one module needs `DisplayCluster` enabled" within a single `.uplugin`. `TramSystemDisplayCluster`
+is therefore its own separate plugin (`TramSystemDisplayCluster.uplugin`), which declares real
+plugin dependencies on both `TramSystem` and `DisplayCluster` in its `"Plugins"` array - this is
+what actually guarantees correct load order, not just correct compilation. The core `TramSystem`
+plugin has zero DisplayCluster references anywhere either way; a project that never enables
+`TramSystemDisplayCluster` is unaffected.
 
 **Honesty note on this phase specifically:** unlike Phases 1-5, which use only core
 `Engine`/`GameFramework` APIs I'm highly confident about, this phase touches nDisplay - a less

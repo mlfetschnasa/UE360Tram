@@ -48,8 +48,17 @@ public:
 	// chunks of DisplaysPerSlot) from DisplayCount/CircleRadiusCm. Discards any existing
 	// per-screen calibration offsets - an explicit reset-to-ideal tool for initial setup or
 	// re-planning the installation, not something run implicitly at load or at runtime.
-	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Tram|Display")
+	// Callable from Blueprint/C++ with any DisplaysPerSlot value.
+	UFUNCTION(BlueprintCallable, Category = "Tram|Display")
 	void GenerateDefaultLayout(int32 DisplaysPerSlot = 3);
+
+	// Editor convenience button (Details panel) for the common case of 3 displays/slot.
+	// CallInEditor only generates a button for parameterless functions - a C++ default
+	// argument doesn't help, since the button-click mechanism has no way to fill in an
+	// argument value - so this exists purely to give GenerateDefaultLayout(3) a clickable
+	// button. Call GenerateDefaultLayout directly (from Blueprint or C++) for any other value.
+	UFUNCTION(CallInEditor, Category = "Tram|Display", meta = (DisplayName = "Generate Default Layout (3 Per Slot)"))
+	void GenerateDefaultLayoutButton();
 
 	UFUNCTION(BlueprintCallable, Category = "Tram|Display")
 	bool FindScreen(int32 DisplayIndex, FTramScreenDefinition& OutScreen) const;

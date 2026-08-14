@@ -259,12 +259,8 @@ moves `RootActor` to `ATramViewRig::GetSharedObserverTransform()`.
 
 ### 7b. Verifying the sync is working
 
-`ADisplayClusterRootActor` has no visible mesh, and in ordinary "Play in Editor" (as opposed to
-an actual clustered launch) nDisplay's screens generally don't render live projected content
-either - that mechanism is tied to the cluster actually running. **Don't expect to see anything
-different in the viewport** from this alone; that's not a sign anything's broken.
+Three ways to confirm it's working, from simplest to most conclusive:
 
-Two ways to actually confirm it's working:
 - **Output Log**, filtered to `LogTramSystemDisplayCluster`: `UTramDisplayClusterViewSync` logs
   once on success at `BeginPlay` (which root actor / view rig it resolved), and then - every
   `DiagnosticLogIntervalSeconds` (default 2s, 0 disables it) - the root actor's current
@@ -272,7 +268,18 @@ Two ways to actually confirm it's working:
   touch the viewport at all. It only logs on the *failure* path otherwise (missing root
   actor/view rig), so silence alone isn't proof of success - check for the one-time success line.
 - **Details panel**: select the `ADisplayClusterRootActor` in the World Outliner and watch its
-  Transform values live-update while the tram runs.
+  Transform values live-update while the tram runs. Each screen's own mesh (a child of the root
+  actor) should visibly move/rotate along with it too, via ordinary parent-child transform
+  propagation - no special nDisplay rendering needed for just this part.
+- **nDisplay's own in-editor preview** (the most conclusive check, confirmed working): select
+  the root actor, find its **Preview** category in the Details panel, and enable it (Python API
+  name `preview_enable`). This renders a live, full-size window showing the selected node's
+  actual per-screen projected output, directly in the editor - no Switchboard or physical
+  cluster launch needed. Requires at least one Screen actually configured (7c) to have anything
+  to project. This is the real validation tool for projection/seam correctness during
+  development; nDisplay's actual clustered rendering (genlocked, multi-machine) does not run in
+  the editor at all and is a separate step, orchestrated via Switchboard once you have the
+  physical installation.
 
 ### 7c. Authoring the nDisplay cluster config
 
@@ -316,12 +323,16 @@ Partition at all.
 - `ATramViewRig::CalcCamera`'s single conventional FOV (section 3c) - and
   `ATramSlotPreviewCamera`'s per-slot yaw offset on top of it - are development stand-ins for
   nDisplay's actual per-screen off-axis projection (section 7). Neither renders each machine's
-  three real screen frustums, so don't judge seam/projection correctness from PIE testing,
-  only tram/slot/look synchronization; seam correctness needs to be judged against the real
-  nDisplay output.
+  three real screen frustums, so don't judge seam/projection correctness from ordinary PIE
+  testing, only tram/slot/look synchronization; use nDisplay's own in-editor preview (7b) once
+  screens are configured (7c) to actually judge projection/seam correctness - confirmed working,
+  no physical cluster needed for that.
 - No automatic generation of nDisplay's cluster config, and no automatic cross-check between
-  its per-node config and this plugin's per-slot config (section 7b) - both are currently
+  its per-node config and this plugin's per-slot config (section 7c) - both are currently
   manual, parallel setup steps an installer has to keep consistent by hand.
-- `UTramDisplayClusterViewSync` (section 7a) was written without engine access to verify
-  compilation against nDisplay's actual UE 5.7 headers - see README.md's Phase 6 section for
-  the specifics and why the risk is scoped to just that one file.
+- `UTramDisplayClusterViewSync` (section 7a) has been confirmed compiling and correctly syncing
+  a real `ADisplayClusterRootActor`'s transform in testing (see README.md's Phase 6 section for
+  the two build/plugin-dependency issues that came up along the way and how they were fixed).
+  Still unverified: actual genlocked multi-machine cluster rendering via Switchboard, and the
+  full 12-screen production config - only reachable with the physical installation or a
+  multi-window local cluster test.

@@ -287,13 +287,22 @@ build failure - "unable to find plugin 'DisplayCluster'" - to catch.) The core `
 plugin has zero DisplayCluster references anywhere either way; a project that never enables
 `TramSystemDisplayCluster` is unaffected.
 
-**Honesty note on this phase specifically:** unlike Phases 1-5, which use only core
-`Engine`/`GameFramework` APIs I'm highly confident about, this phase touches nDisplay - a less
-commonly used engine plugin with real API drift across UE versions - and was written without
-engine access to verify compilation. The nDisplay-facing surface is kept deliberately minimal
-(one class name, `ADisplayClusterRootActor`, moved via the ordinary `AActor` API) specifically
-to keep the blast radius of "this needs adjusting for your exact engine build" as small as
-possible if it doesn't compile as-is.
+**Honesty note on this phase specifically:** unlike Phases 1-5, this phase touches nDisplay - a
+less commonly used engine plugin with real API drift across UE versions - and the initial pass
+was written without engine access to verify compilation, at real risk of needing adjustment.
+That risk materialized twice (the plugin-vs-module dependency issue and the "nDisplay" vs.
+"DisplayCluster" naming mixup above), both caught and fixed in a handful of build/test round
+trips rather than turning into a bigger redesign - which is exactly why the nDisplay-facing
+surface was kept deliberately minimal (one class name, `ADisplayClusterRootActor`, moved via the
+ordinary `AActor` API) in the first place: to keep the blast radius of "this needs adjusting for
+your exact engine build" small. As of this update, `UTramDisplayClusterViewSync` has been
+confirmed compiling and correctly moving a real `ADisplayClusterRootActor` in a live test
+project, including tracking a launched tram's position/rotation frame to frame. Still
+unconfirmed: rendering through nDisplay's actual per-screen off-axis projection at production
+scale (12 screens, real Switchboard-orchestrated cluster launch) - nDisplay's in-editor preview
+(`preview_enable` on the root actor - see SETUP.md 7b) is confirmed to work for validating
+projection/seam correctness without that, but the full genlocked multi-machine path remains
+untested.
 
 ## Determinism model (why this satisfies the seam-consistency requirement)
 

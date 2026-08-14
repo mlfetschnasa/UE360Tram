@@ -31,11 +31,14 @@ Two separate plugins, each a top-level folder in this repo:
 - **`TramSystemDisplayCluster/`** (`TramSystemDisplayCluster.uplugin`) - the nDisplay/
   DisplayCluster production rendering bridge (Phase 6). A genuinely separate plugin, not just a
   second module in `TramSystem.uplugin` - that was tried first and doesn't work: UE's
-  plugin-dependency mechanism (which guarantees `DisplayCluster` is enabled and loaded before a
-  dependent module tries to load) only operates at the plugin level via a `.uplugin`'s
+  plugin-dependency mechanism (which guarantees a dependency plugin is enabled and loaded before
+  a dependent module tries to load) only operates at the plugin level via a `.uplugin`'s
   `"Plugins"` array, not per-module, so `TramSystemDisplayCluster.uplugin` declares real plugin
-  dependencies on both `TramSystem` and `DisplayCluster`. A project that doesn't use nDisplay
-  simply never enables this plugin (Objective 19); `TramSystem` itself is completely unaffected
+  dependencies on both `TramSystem` and `nDisplay` (the *plugin's* name - not to be confused with
+  `DisplayCluster`, the name of the specific runtime module within it that `Build.cs` links
+  against; conflating the two cost a round of "unable to find plugin 'DisplayCluster'" errors
+  during testing). A project that doesn't use nDisplay simply never enables this plugin
+  (Objective 19); `TramSystem` itself is completely unaffected
   either way.
 
 ## Status
@@ -275,8 +278,12 @@ plugin's modules are enabled and loaded before a dependent module tries to load,
 the `.uplugin` level (a `"Plugins"` array), not per-module - there is no way to declare "only
 this one module needs `DisplayCluster` enabled" within a single `.uplugin`. `TramSystemDisplayCluster`
 is therefore its own separate plugin (`TramSystemDisplayCluster.uplugin`), which declares real
-plugin dependencies on both `TramSystem` and `DisplayCluster` in its `"Plugins"` array - this is
-what actually guarantees correct load order, not just correct compilation. The core `TramSystem`
+plugin dependencies on both `TramSystem` and `nDisplay` in its `"Plugins"` array - this is what
+actually guarantees correct load order, not just correct compilation. (A second round-trip:
+that "Plugins" entry initially said `"DisplayCluster"`, copying the `Build.cs` *module* name -
+wrong, since plugin-dependency matching is keyed by the *plugin's* name, which for nDisplay is
+literally "nDisplay"; `DisplayCluster` is only the name of one runtime module inside it. Cost a
+build failure - "unable to find plugin 'DisplayCluster'" - to catch.) The core `TramSystem`
 plugin has zero DisplayCluster references anywhere either way; a project that never enables
 `TramSystemDisplayCluster` is unaffected.
 

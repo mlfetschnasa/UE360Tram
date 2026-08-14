@@ -226,13 +226,16 @@ everything above - your tram/slot/look testing setup doesn't change at all.
 
 Copy `TramSystemDisplayCluster/` into `Plugins/TramSystemDisplayCluster/` if you haven't
 already (section 1). Its own `.uplugin` declares plugin-level dependencies on both `TramSystem`
-and `DisplayCluster` (nDisplay's own plugin, which ships with the engine - no separate
-download), so enabling **"Tram System - DisplayCluster Bridge"** under Edit > Plugins should
-bring `DisplayCluster` along with it automatically. If it doesn't, or if you see a "module could
-not be loaded" error at startup, explicitly enable "nDisplay" under Edit > Plugins too, then
-restart the editor - a plugin's own declared dependencies aren't always a substitute for
-manually confirming a dependency is enabled, especially the first time. Regenerate project
-files and build after enabling.
+and `nDisplay` (the plugin you see and enable under Edit > Plugins, ships with the engine - no
+separate download; note this is the *plugin's* name, distinct from `DisplayCluster`, which is
+just the name of the specific module inside it that `Build.cs` links against - getting this
+wrong the first time produces an "unable to find plugin 'DisplayCluster'" error at build time),
+so enabling **"Tram System - DisplayCluster Bridge"** under Edit > Plugins should bring
+`nDisplay` along with it automatically. If it doesn't, or if you see a "module could not be
+loaded" error at startup, explicitly enable "nDisplay" under Edit > Plugins too, then restart
+the editor - a plugin's own declared dependencies aren't always a substitute for manually
+confirming a dependency is enabled, especially the first time. Regenerate project files and
+build after enabling.
 
 nDisplay is asset-first, not placement-first: rather than searching the generic Place Actors
 panel for a base class, create an nDisplay config asset from the Content Browser (right-click >

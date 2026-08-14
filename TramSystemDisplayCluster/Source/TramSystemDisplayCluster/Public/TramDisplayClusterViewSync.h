@@ -46,7 +46,16 @@ public:
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Tram|DisplayCluster")
 	TObjectPtr<ADisplayClusterRootActor> RootActor;
 
+	// How often (seconds) to log the root actor's current transform, purely so successful
+	// operation is visible/confirmable in the Output Log rather than only inferable from the
+	// absence of the BeginPlay failure warnings. 0 disables periodic logging entirely.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Tram|DisplayCluster", meta = (ClampMin = "0.0"))
+	float DiagnosticLogIntervalSeconds = 2.f;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+private:
+	double TimeSinceLastDiagnosticLog = 0.0;
 };

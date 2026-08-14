@@ -300,6 +300,34 @@ numbers it asks for from your `UTramDisplayConfiguration` data asset:
   as nDisplay node 0 should also launch with `-TramSlot=0`). There is no automatic
   cross-checking between the two yet.
 
+#### How nDisplay's Node/Viewport/Screen hierarchy maps onto this project's Slot/Display concepts
+
+It's easy to expect one `ADisplayClusterRootActor`/config asset per machine, the way this
+project has one `-TramSlot=` per machine. That's not how nDisplay works, and the mismatch is
+worth spelling out before you build the full config:
+
+- There is **one** config asset (one root actor) describing the **entire** installation - all
+  4 machines, all 12 screens - not one per machine. You author it once, in one level, and every
+  machine loads the same asset at launch.
+- Inside that one config asset, nDisplay has **Cluster Nodes**. A Cluster Node corresponds to
+  one physical machine - this is the nDisplay-native equivalent of this project's "Slot", so
+  you'll have 4 Cluster Nodes, matching the 4 `-TramSlot=` values (0-3).
+- Each Cluster Node owns multiple **Viewports**, and each Viewport is bound to a **Screen**
+  (the physical projection geometry - position/size/orientation, the same numbers you pull from
+  `LogAllScreenTransforms` above). Since each of this project's 4 slots drives 3 portrait
+  displays, each Cluster Node will own 3 Viewports/Screens.
+- This is structurally identical to `UTramDisplayConfiguration.SlotMappings` (SlotIndex -> 3
+  DisplayIndices) - nDisplay's Node -> Viewports relationship is the same shape, just authored
+  in the Configurator tool instead of a data asset.
+- At launch, every machine runs the *same* shared config, and `-dc_node=<NodeID>` is what tells
+  that particular machine which Cluster Node it personifies - it then renders only that node's
+  viewports. This is also why there's only one `ADisplayClusterRootActor` in the level for
+  `UTramDisplayClusterViewSync` to find and move (see 7a/7b) even though 4 physical machines are
+  involved: the root actor is the whole stage, not a per-machine actor.
+- Practically, this means you don't need all 4 nodes/12 screens built before you can validate
+  anything. Build out **Node 0's 3 screens first**, confirm the projection looks right via the
+  in-editor preview (7b), and only then repeat the same pattern for nodes 1-3.
+
 ### 7d. If your level uses World Partition: a spatial-loading gotcha
 
 If the Map Check log shows something like `Non-spatially loaded actor ND_Screen references

@@ -16,13 +16,14 @@ void UTramDisplayClusterViewSync::BeginPlay()
 
 	if (!RootActor)
 	{
-		// GetActorOfClass (a single-result search) previously did this, but nDisplay's stage
-		// hierarchy can apparently contain more than one actor satisfying
-		// IsA<ADisplayClusterRootActor>() (e.g. individual screens, if they're implemented as
-		// child actors of the root class rather than plain components) - silently grabbing
-		// "the first one found" risks syncing the wrong actor with no indication anything was
-		// ambiguous. Enumerate all candidates instead: auto-assign only when there is exactly
-		// one, and refuse to guess (loudly) otherwise.
+		// GetActorOfClass (a single-result search) previously did this, but it silently grabs
+		// "the first one found" with no indication if there was more than one candidate to
+		// choose from - e.g. a level with more than one nDisplay config asset placed (multiple
+		// stages/root actors) for testing. Enumerate all candidates instead: auto-assign only
+		// when there is exactly one, and refuse to guess (loudly) otherwise. (A root actor's
+		// name in the World Outliner is not a reliable way to identify it either, by the way -
+		// one project's turned out to be auto-named "ND_Screen", which reads like an individual
+		// screen but was the actual root actor - verify by class, not name.)
 		TArray<AActor*> Candidates;
 		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ADisplayClusterRootActor::StaticClass(), Candidates);
 

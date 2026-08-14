@@ -43,10 +43,11 @@ public:
 
 	// Recommended: set this explicitly to your level's stage/root actor rather than leaving it
 	// unset. BeginPlay can auto-resolve it via a level-wide class search, but only when there
-	// is exactly one ADisplayClusterRootActor-satisfying actor in the level - it logs a
-	// warning and refuses to guess if it finds more than one, since a node cluster's individual
-	// screens can apparently also satisfy that class check depending on how they're
-	// implemented (see SETUP.md 7a).
+	// is exactly one ADisplayClusterRootActor-satisfying actor in the level - it logs a warning
+	// naming every candidate (rather than guessing) if it finds more than one, e.g. because
+	// more than one nDisplay config asset is placed in the level. A root actor's name in the
+	// World Outliner is not a reliable way to identify it - verify by class, not name (see
+	// SETUP.md 7a).
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Tram|DisplayCluster")
 	TObjectPtr<ADisplayClusterRootActor> RootActor;
 

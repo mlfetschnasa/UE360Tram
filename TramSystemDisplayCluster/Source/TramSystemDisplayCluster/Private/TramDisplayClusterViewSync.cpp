@@ -16,7 +16,32 @@ void UTramDisplayClusterViewSync::BeginPlay()
 
 	if (!RootActor)
 	{
-		RootActor = Cast<ADisplayClusterRootActor>(UGameplayStatics::GetActorOfClass(GetWorld(), ADisplayClusterRootActor::StaticClass()));
+		// GetActorOfClass (a single-result search) previously did this, but it silently grabs
+		// "the first one found" with no indication if there was more than one candidate to
+		// choose from - e.g. a level with more than one nDisplay config asset placed (multiple
+		// stages/root actors) for testing. Enumerate all candidates instead: auto-assign only
+		// when there is exactly one, and refuse to guess (loudly) otherwise. (A root actor's
+		// name in the World Outliner is not a reliable way to identify it either, by the way -
+		// one project's turned out to be auto-named "ND_Screen", which reads like an individual
+		// screen but was the actual root actor - verify by class, not name.)
+		TArray<AActor*> Candidates;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ADisplayClusterRootActor::StaticClass(), Candidates);
+
+		if (Candidates.Num() == 1)
+		{
+			RootActor = Cast<ADisplayClusterRootActor>(Candidates[0]);
+		}
+		else if (Candidates.Num() > 1)
+		{
+			TArray<FString> CandidateNames;
+			for (const AActor* Candidate : Candidates)
+			{
+				CandidateNames.Add(GetNameSafe(Candidate));
+			}
+			UE_LOG(LogTramSystemDisplayCluster, Warning,
+				TEXT("UTramDisplayClusterViewSync on %s found %d ADisplayClusterRootActor candidates in the level (%s) - refusing to guess which one is the actual stage. Set RootActor explicitly in the Details panel."),
+				*GetNameSafe(GetOwner()), Candidates.Num(), *FString::Join(CandidateNames, TEXT(", ")));
+		}
 	}
 
 	if (!RootActor)

@@ -28,7 +28,7 @@
 			"Enabled": true
 		},
 		{
-			"Name": "DisplayCluster",
+			"Name": "nDisplay",
 			"Enabled": true
 		}
 	]

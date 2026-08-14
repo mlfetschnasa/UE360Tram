@@ -6,10 +6,11 @@ using UnrealBuildTool;
 // project that doesn't use nDisplay can simply never enable this plugin at all. Being a
 // separate .uplugin (not just a second module in TramSystem.uplugin) matters here beyond
 // tidiness: it's what lets TramSystemDisplayCluster.uplugin declare a real plugin-level
-// dependency on "DisplayCluster" (see that file's "Plugins" array), which is the only way to
-// guarantee DisplayCluster's own modules are enabled and loaded before this one tries to load -
-// a per-module Build.cs dependency alone only affects compilation, not runtime module load
-// order/enablement.
+// dependency on "nDisplay" (see that file's "Plugins" array - note the *plugin's* name is
+// "nDisplay", not "DisplayCluster"; "DisplayCluster" is only the name of the specific module
+// within it referenced below), which is the only way to guarantee its modules are enabled and
+// loaded before this one tries to load - a per-module Build.cs dependency alone only affects
+// compilation, not runtime module load order/enablement.
 public class TramSystemDisplayCluster : ModuleRules
 {
 	public TramSystemDisplayCluster(ReadOnlyTargetRules Target) : base(Target)

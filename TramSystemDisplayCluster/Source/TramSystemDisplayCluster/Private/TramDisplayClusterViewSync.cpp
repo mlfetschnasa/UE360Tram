@@ -16,7 +16,31 @@ void UTramDisplayClusterViewSync::BeginPlay()
 
 	if (!RootActor)
 	{
-		RootActor = Cast<ADisplayClusterRootActor>(UGameplayStatics::GetActorOfClass(GetWorld(), ADisplayClusterRootActor::StaticClass()));
+		// GetActorOfClass (a single-result search) previously did this, but nDisplay's stage
+		// hierarchy can apparently contain more than one actor satisfying
+		// IsA<ADisplayClusterRootActor>() (e.g. individual screens, if they're implemented as
+		// child actors of the root class rather than plain components) - silently grabbing
+		// "the first one found" risks syncing the wrong actor with no indication anything was
+		// ambiguous. Enumerate all candidates instead: auto-assign only when there is exactly
+		// one, and refuse to guess (loudly) otherwise.
+		TArray<AActor*> Candidates;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ADisplayClusterRootActor::StaticClass(), Candidates);
+
+		if (Candidates.Num() == 1)
+		{
+			RootActor = Cast<ADisplayClusterRootActor>(Candidates[0]);
+		}
+		else if (Candidates.Num() > 1)
+		{
+			TArray<FString> CandidateNames;
+			for (const AActor* Candidate : Candidates)
+			{
+				CandidateNames.Add(GetNameSafe(Candidate));
+			}
+			UE_LOG(LogTramSystemDisplayCluster, Warning,
+				TEXT("UTramDisplayClusterViewSync on %s found %d ADisplayClusterRootActor candidates in the level (%s) - refusing to guess which one is the actual stage. Set RootActor explicitly in the Details panel."),
+				*GetNameSafe(GetOwner()), Candidates.Num(), *FString::Join(CandidateNames, TEXT(", ")));
+		}
 	}
 
 	if (!RootActor)

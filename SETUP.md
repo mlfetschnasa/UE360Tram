@@ -241,13 +241,21 @@ nDisplay is asset-first, not placement-first: rather than searching the generic 
 panel for a base class, create an nDisplay config asset from the Content Browser (right-click >
 look for an "nDisplay" category) - this generates a Blueprint-based `ADisplayClusterRootActor`
 subclass along with its Configurator editor for defining nodes/screens (see 7c). Drag that
-asset into the level to place an instance; that placed instance is your root actor. Add a
-`UTramDisplayClusterViewSync` component to it (or to any other convenient actor). Set its
-`ViewRig` to your `ATramViewRig` and leave `RootActor` unset (it auto-resolves via
-`GetActorOfClass` in `BeginPlay`, same pattern as `ATramPlayerController` finding the view rig -
-and it matches Blueprint subclasses of `ADisplayClusterRootActor` too, not just the base C++
-class). That's the entire runtime integration - every frame, it moves the root actor to
-`ATramViewRig::GetSharedObserverTransform()`.
+asset into the level to place an instance; that placed instance is your **stage/root actor** -
+note its name in the World Outliner (it is *not* named "ND_Screen" or similar - individual
+screens defined within it are separate from this top-level actor, whether they show up as
+their own child actors or as scene components nested under it). Add a
+`UTramDisplayClusterViewSync` component to the stage/root actor itself (simplest - avoids any
+ambiguity about which actor it's on) or to any other convenient actor. Set its `ViewRig` to
+your `ATramViewRig`.
+
+**Set `RootActor` explicitly** to that same stage/root actor rather than leaving it unset -
+`BeginPlay` can auto-resolve it via a level-wide class search only when there is exactly one
+`ADisplayClusterRootActor` instance in the level, and warns (rather than guessing) if it finds
+more than one; a node cluster's individual screens can apparently also satisfy that class check
+depending on how they're implemented, so relying on auto-resolve risks silently syncing an
+individual screen instead of the actual stage. That's the entire runtime integration - every
+frame, it moves `RootActor` to `ATramViewRig::GetSharedObserverTransform()`.
 
 ### 7b. Verifying the sync is working
 

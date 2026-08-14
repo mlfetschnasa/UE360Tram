@@ -41,8 +41,12 @@ public:
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Tram|DisplayCluster")
 	TObjectPtr<ATramViewRig> ViewRig;
 
-	// Left unset, auto-resolved in BeginPlay (there is normally exactly one root actor per
-	// nDisplay node/process).
+	// Recommended: set this explicitly to your level's stage/root actor rather than leaving it
+	// unset. BeginPlay can auto-resolve it via a level-wide class search, but only when there
+	// is exactly one ADisplayClusterRootActor-satisfying actor in the level - it logs a
+	// warning and refuses to guess if it finds more than one, since a node cluster's individual
+	// screens can apparently also satisfy that class check depending on how they're
+	// implemented (see SETUP.md 7a).
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Tram|DisplayCluster")
 	TObjectPtr<ADisplayClusterRootActor> RootActor;
 

@@ -234,15 +234,36 @@ restart the editor - a plugin's own declared dependencies aren't always a substi
 manually confirming a dependency is enabled, especially the first time. Regenerate project
 files and build after enabling.
 
-Place an `ADisplayClusterRootActor` in your level (this is nDisplay's own actor - see its
-documentation for the full Configurator workflow in 7b) and add a `UTramDisplayClusterViewSync`
-component to any convenient actor (or to the root actor itself). Set its `ViewRig` to your
-`ATramViewRig` and leave `RootActor` unset (it auto-resolves via `GetActorOfClass` in
-`BeginPlay`, same pattern as `ATramPlayerController` finding the view rig). That's the entire
-runtime integration - every frame, it moves the root actor to
+nDisplay is asset-first, not placement-first: rather than searching the generic Place Actors
+panel for a base class, create an nDisplay config asset from the Content Browser (right-click >
+look for an "nDisplay" category) - this generates a Blueprint-based `ADisplayClusterRootActor`
+subclass along with its Configurator editor for defining nodes/screens (see 7c). Drag that
+asset into the level to place an instance; that placed instance is your root actor. Add a
+`UTramDisplayClusterViewSync` component to it (or to any other convenient actor). Set its
+`ViewRig` to your `ATramViewRig` and leave `RootActor` unset (it auto-resolves via
+`GetActorOfClass` in `BeginPlay`, same pattern as `ATramPlayerController` finding the view rig -
+and it matches Blueprint subclasses of `ADisplayClusterRootActor` too, not just the base C++
+class). That's the entire runtime integration - every frame, it moves the root actor to
 `ATramViewRig::GetSharedObserverTransform()`.
 
-### 7b. Authoring the nDisplay cluster config
+### 7b. Verifying the sync is working
+
+`ADisplayClusterRootActor` has no visible mesh, and in ordinary "Play in Editor" (as opposed to
+an actual clustered launch) nDisplay's screens generally don't render live projected content
+either - that mechanism is tied to the cluster actually running. **Don't expect to see anything
+different in the viewport** from this alone; that's not a sign anything's broken.
+
+Two ways to actually confirm it's working:
+- **Output Log**, filtered to `LogTramSystemDisplayCluster`: `UTramDisplayClusterViewSync` logs
+  once on success at `BeginPlay` (which root actor / view rig it resolved), and then - every
+  `DiagnosticLogIntervalSeconds` (default 2s, 0 disables it) - the root actor's current
+  Location/Rotation, so you can watch the numbers change as the tram moves without needing to
+  touch the viewport at all. It only logs on the *failure* path otherwise (missing root
+  actor/view rig), so silence alone isn't proof of success - check for the one-time success line.
+- **Details panel**: select the `ADisplayClusterRootActor` in the World Outliner and watch its
+  Transform values live-update while the tram runs.
+
+### 7c. Authoring the nDisplay cluster config
 
 This plugin does **not** generate nDisplay's config for you (see README.md's Phase 6 section
 for why - version-schema risk). Use nDisplay's own in-editor Configurator tool, and pull the
@@ -260,6 +281,20 @@ numbers it asks for from your `UTramDisplayConfiguration` data asset:
   physical PC's launch shortcut keeps both consistent for that machine (e.g. the PC configured
   as nDisplay node 0 should also launch with `-TramSlot=0`). There is no automatic
   cross-checking between the two yet.
+
+### 7d. If your level uses World Partition: a spatial-loading gotcha
+
+If the Map Check log shows something like `Non-spatially loaded actor ND_Screen references
+Spatially loaded actor TramViewRig`, that's World Partition flagging a real (if usually
+survivable in a small test level) issue, not an nDisplay- or TramSystem-specific bug. nDisplay's
+root actor/screens are typically always-loaded (not tied to a World Partition streaming cell),
+but `ATramViewRig` - along with the tram actor and route - defaults to being spatially loaded
+like any other placed actor, meaning it could theoretically be streamed out while something
+always-loaded still references it. Since these are core, always-needed actors rather than
+streamable background content, the fix is to mark them **Always Loaded**: select the actor,
+Details panel > World Partition > uncheck **Is Spatially Loaded**. Worth doing for `ATramViewRig`,
+the tram actor, and `ATramSplineRoute` even outside the nDisplay setup, if your level uses World
+Partition at all.
 
 ## Known gaps at this stage
 

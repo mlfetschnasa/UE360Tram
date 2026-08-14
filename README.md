@@ -252,7 +252,7 @@ frame, to match `ATramViewRig::GetSharedObserverTransform()`.
 
 | Type | File | Responsibility |
 |---|---|---|
-| `UTramDisplayClusterViewSync` | `TramSystemDisplayCluster/TramDisplayClusterViewSync.h/.cpp` | The entire integration: each Tick, moves the level's `ADisplayClusterRootActor` to `GetSharedObserverTransform()` via plain `SetActorLocationAndRotation` - conceptually identical to how `ATramSlotPreviewCamera`/`UTramMovementComponent` already move an actor to match a computed transform each tick. |
+| `UTramDisplayClusterViewSync` | `TramSystemDisplayCluster/TramDisplayClusterViewSync.h/.cpp` | The entire integration: each Tick, moves the level's `ADisplayClusterRootActor` to `GetSharedObserverTransform()` via plain `SetActorLocationAndRotation` - conceptually identical to how `ATramSlotPreviewCamera`/`UTramMovementComponent` already move an actor to match a computed transform each tick. Since `ADisplayClusterRootActor` has no visible mesh and ordinary PIE doesn't render nDisplay's projected screens, success is otherwise invisible - it logs once on success at `BeginPlay` and periodically (`DiagnosticLogIntervalSeconds`, default 2s) logs the root actor's transform, so this is verifiable from the Output Log alone. |
 | `UTramDisplayConfiguration::LogAllScreenTransforms` | `TramSystem/TramDisplayConfiguration.h/.cpp` | A read-only diagnostic (no DisplayCluster dependency) that logs every screen's local transform and size in a copy-paste-friendly format, to help hand-author nDisplay's Screen components without doing the circle trigonometry by hand. |
 
 **Deliberately NOT built: automatic generation of nDisplay's cluster config file.** nDisplay

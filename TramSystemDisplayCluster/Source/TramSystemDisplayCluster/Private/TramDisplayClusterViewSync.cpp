@@ -27,6 +27,15 @@ void UTramDisplayClusterViewSync::BeginPlay()
 	{
 		UE_LOG(LogTramSystemDisplayCluster, Warning, TEXT("UTramDisplayClusterViewSync on %s has no ViewRig assigned"), *GetNameSafe(GetOwner()));
 	}
+
+	if (RootActor && ViewRig)
+	{
+		// Success is otherwise silent (nothing logs on the happy path each tick, to avoid log
+		// spam) - this one line makes "it's actually running" provable in the Output Log
+		// rather than only inferable from the absence of the warnings above.
+		UE_LOG(LogTramSystemDisplayCluster, Log, TEXT("UTramDisplayClusterViewSync on %s is syncing %s to %s's shared observer transform"),
+			*GetNameSafe(GetOwner()), *GetNameSafe(RootActor), *GetNameSafe(ViewRig));
+	}
 }
 
 void UTramDisplayClusterViewSync::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -42,4 +51,17 @@ void UTramDisplayClusterViewSync::TickComponent(float DeltaTime, ELevelTick Tick
 	// TeleportPhysics: same reasoning as UTramMovementComponent/ATramSlotPreviewCamera - this
 	// is scripted movement driven by a deterministic external computation, not physics.
 	RootActor->SetActorLocationAndRotation(ObserverTransform.GetLocation(), ObserverTransform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
+
+	if (DiagnosticLogIntervalSeconds > 0.f)
+	{
+		TimeSinceLastDiagnosticLog += DeltaTime;
+		if (TimeSinceLastDiagnosticLog >= DiagnosticLogIntervalSeconds)
+		{
+			TimeSinceLastDiagnosticLog = 0.0;
+			const FVector Location = ObserverTransform.GetLocation();
+			const FRotator Rotation = ObserverTransform.GetRotation().Rotator();
+			UE_LOG(LogTramSystemDisplayCluster, Log, TEXT("%s -> Location=(X=%.1f,Y=%.1f,Z=%.1f) Rotation=(Pitch=%.1f,Yaw=%.1f,Roll=%.1f)"),
+				*GetNameSafe(RootActor), Location.X, Location.Y, Location.Z, Rotation.Pitch, Rotation.Yaw, Rotation.Roll);
+		}
+	}
 }

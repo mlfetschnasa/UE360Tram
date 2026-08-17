@@ -26,8 +26,17 @@ void ATramPlayerController::BeginPlay()
 		// No per-player Pawn is spawned (see ATramGameMode) - every rider's camera targets the
 		// one shared ATramViewRig instead. This only affects this machine's own local view, so
 		// it's resolved locally rather than over the network, same as ResolveInitialDesiredSlot()
-		// above.
-		AActor* Rig = UGameplayStatics::GetActorOfClass(GetWorld(), ATramViewRig::StaticClass());
+		// above. GetAllActorsOfClass (not the single-result GetActorOfClass) so a level that
+		// accidentally has more than one ATramViewRig placed fails loudly instead of silently
+		// picking "whichever one happened to be first" - same reasoning as
+		// UTramDisplayClusterViewSync's RootActor resolution.
+		TArray<AActor*> ViewRigCandidates;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ATramViewRig::StaticClass(), ViewRigCandidates);
+		if (ViewRigCandidates.Num() > 1)
+		{
+			UE_LOG(LogTramSystem, Warning, TEXT("ATramPlayerController on %s found %d ATramViewRig actors in the level - viewing the first one found, but this level should only have one"), *GetNameSafe(this), ViewRigCandidates.Num());
+		}
+		ATramViewRig* Rig = ViewRigCandidates.Num() > 0 ? Cast<ATramViewRig>(ViewRigCandidates[0]) : nullptr;
 		if (!Rig)
 		{
 			UE_LOG(LogTramSystem, Warning, TEXT("ATramPlayerController on %s found no ATramViewRig in the level to view"), *GetNameSafe(this));
@@ -42,7 +51,7 @@ void ATramPlayerController::BeginPlay()
 			DevPreviewCamera = GetWorld()->SpawnActor<ATramSlotPreviewCamera>();
 			if (DevPreviewCamera)
 			{
-				DevPreviewCamera->ViewRig = Cast<ATramViewRig>(Rig);
+				DevPreviewCamera->ViewRig = Rig;
 				DevPreviewCamera->DisplayConfiguration = DevPreviewDisplayConfiguration;
 				DevPreviewCamera->SlotIndex = GetAssignedTramSlot();
 				SetViewTargetWithBlend(DevPreviewCamera, 0.f);
@@ -106,6 +115,22 @@ int32 ATramPlayerController::ResolveInitialDesiredSlot() const
 	if (FParse::Value(FCommandLine::Get(), TEXT("TramSlot="), Value))
 	{
 		return Value;
+	}
+
+	// Falls back to nDisplay's own -dc_node= launch arg (see SETUP.md 7c) so a production
+	// machine only needs ONE consistent per-machine switch instead of two that have to be kept
+	// in sync by hand - this is purely reading a well-known command-line token as plain text
+	// (FParse doesn't touch anything DisplayCluster-specific), so it does not create a
+	// dependency on that plugin/module (Objective 19 stays intact). -dc_node= is nDisplay's own
+	// cluster node ID and isn't guaranteed to be numeric (it's whatever the config's node was
+	// named) - only used here if it happens to parse as a plain integer; otherwise this falls
+	// through to the ini/auto-assign options below, same as if -dc_node= were absent. Naming
+	// cluster nodes "0".."3" to match tram slot indices is the recommended convention if you
+	// want this fallback to actually apply.
+	FString DcNodeId;
+	if (FParse::Value(FCommandLine::Get(), TEXT("dc_node="), DcNodeId) && !DcNodeId.IsEmpty() && DcNodeId.IsNumeric())
+	{
+		return FCString::Atoi(*DcNodeId);
 	}
 
 	if (GConfig && GConfig->GetInt(TEXT("TramSystem"), TEXT("PreferredSlot"), Value, GGameIni))

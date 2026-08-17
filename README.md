@@ -190,13 +190,11 @@ rides rigidly with the tram body, unaffected by rotation smoothing. `FinalRotati
 SmoothedBaseRotation * ObserverOffset.Rotation * SharedLookRotation` - the fixed mounting
 offset and rotation-follow smoothing apply first, the operator's shared look is layered on top.
 
-Not yet built: an actual input-binding/HUD widget wiring mouse movement to
+Not yet built: an actual input-binding/UMG widget wiring mouse movement to
 `ApplyOperatorLookInput` and slot selection to `RequestTramSlot` - the plugin exposes
 `BlueprintCallable` entry points for both, but the concrete UMG/input-binding assets are a
-host-project concern. Likewise, console commands for the diagnostics values are not yet
-implemented (`GetDiagnosticSummary()` on both `UTramMovementComponent` and `ATramViewRig`
-exist and can back a HUD, but no HUD/console command consumes them yet) - deferred to Phase 7
-(hardening) rather than built speculatively now.
+host-project concern, deferred to Phase 7 (hardening) rather than built speculatively now. The
+on-screen diagnostics side of this is now built, though - see `ATramSyncHUD` below (Objective 26).
 
 **Added after initial testing: `ATramSlotPreviewCamera`.** Objective 27 actually specifies a
 simplified camera **per machine** ("allow each machine to render one approximate 90-degree
@@ -303,6 +301,23 @@ scale (12 screens, real Switchboard-orchestrated cluster launch) - nDisplay's in
 (`preview_enable` on the root actor - see SETUP.md 7b) is confirmed to work for validating
 projection/seam correctness without that, but the full genlocked multi-machine path remains
 untested.
+
+## Objective 26 contents — Synchronization HUD
+
+Built ahead of the rest of Phase 7 (which is otherwise still open - see Status) because it's
+small, self-contained, and immediately useful for exactly the kind of multi-window testing this
+project has been doing throughout.
+
+| Type | File | Responsibility |
+|---|---|---|
+| `ATramSyncHUD` | `TramSystem/TramSyncHUD.h/.cpp` | Plain `AHUD` subclass drawing Objective 26's diagnostics via `Canvas::DrawText` - no UMG/content assets required. Reuses `UTramMovementComponent::GetDiagnosticSummary()` and `ATramViewRig::GetDiagnosticSummary()` for the fields they already cover (role/state/distance/speed/segment/prediction-error, look-mode/shared-look/smoothed-heading) and adds the remaining Objective 26 fields those don't: tram slot, global display indices, synchronized server time, last correction amount, and ping. On the listen server, an additional section adds connected rider count, occupied/free slots, and launch state. |
+
+Off by default (`bShowSyncHUD = false`) so it never appears unintentionally; toggle via
+`ToggleSyncHUD()` (bind to a debug input action) or flip the box directly for testing. `ViewRig`
+auto-resolves the same single-candidate-only way `UTramDisplayClusterViewSync`'s `RootActor`
+does. Using it requires setting it as your project's `AGameModeBase::HUDClass` - the same
+host-project wiring step every other GameMode-adjacent class in this plugin needs (see SETUP.md
+3e). Purely read-only: it cannot affect synchronization, only observe it.
 
 ## Determinism model (why this satisfies the seam-consistency requirement)
 

@@ -152,6 +152,20 @@ you just made and `ViewRig` to the actor from 3c. With `bDrawDebugVisualization`
 draw the 15ft circle, all screen planes with forward-vector arrows and slot labels, and the
 composed observer forward vector.
 
+### 3e. Synchronization HUD (Objective 26, optional)
+
+`ATramSyncHUD` prints the diagnostics Objective 26 asks for directly to the screen via
+`Canvas::DrawText` - no UMG/content assets needed. Since `ATramGameMode` doesn't set `HUDClass`
+(same reasoning as `PlayerControllerClass` in 3d0 - it's a host-project concern), using it needs
+either a Blueprint child of `ATramGameMode` with `HUDClass` set to `ATramSyncHUD`, or a small
+C++ subclass that sets `HUDClass = ATramSyncHUD::StaticClass()` in its constructor.
+
+It's off by default (`bShowSyncHUD = false`) so it never appears unintentionally - either check
+that box directly on a placed instance for testing, or call `ToggleSyncHUD()` from a debug input
+binding. `ViewRig` auto-resolves the same single-candidate-only way `UTramDisplayClusterViewSync`'s
+`RootActor` does (3a); set `DisplayConfiguration` (from 3d) explicitly if you want the "Global
+display indices" line populated for this machine's assigned slot.
+
 ## 4. Running a multi-machine test
 
 **In-editor (fastest iteration):** Play dropdown > Advanced Settings > Multiplayer Options: set
@@ -186,9 +200,10 @@ any UI:
 - `LogTramSystem` in the Output Log (filterable) is the primary signal - launch/pause/slot
   assignment/corrections all log there.
 - `UTramMovementComponent::GetDiagnosticSummary()` and `ATramViewRig::GetDiagnosticSummary()`
-  are the fastest way to compare state across windows (e.g. print them to screen with a
-  `Print String` on a timer, one per PIE window) - matches the "Role/State/Dist/Speed/Seg/
-  PredErr" and "LookMode/SharedLook/SmoothedBaseYaw" fields respectively.
+  are the fastest way to compare state across windows - matches the "Role/State/Dist/Speed/Seg/
+  PredErr" and "LookMode/SharedLook/SmoothedBaseYaw" fields respectively. `ATramSyncHUD` (3e)
+  now prints both directly to screen, one per PIE window, without wiring up a manual
+  `Print String`.
 - Expect `PredErr` to sit near 0 on clients almost all the time; it should only move visibly
   right after a correction, and only for a fraction of a second.
 - `ATramPlayerController::GetAssignedTramSlot()` should return a valid (non -1) index shortly
@@ -353,10 +368,9 @@ your level uses World Partition at all.
 
 ## Known gaps at this stage
 
-- No HUD is provided - `UTramMovementComponent`/`ATramViewRig`'s `GetDiagnosticSummary()` are
-  the values to print/display yourself for now (see section 6).
-- No input bindings or UMG widgets for slot selection / look control / tram commands exist yet
-  (see section 5) - only the `BlueprintCallable` entry points do.
+- `ATramSyncHUD` (3e) provides the read-only diagnostics overlay; no input bindings or UMG
+  widgets for slot selection / look control / tram commands exist yet (see section 5) - only
+  the `BlueprintCallable` entry points do.
 - `ATramViewRig::CalcCamera`'s single conventional FOV (section 3c) - and
   `ATramSlotPreviewCamera`'s per-slot yaw offset on top of it - are development stand-ins for
   nDisplay's actual per-screen off-axis projection (section 7). Neither renders each machine's

@@ -118,7 +118,7 @@ a controller:
 | `ATramPlayerState` | `TramPlayerState.h/.cpp` | Replicated `SlotIndex` per rider (`INDEX_NONE` = unassigned) plus a `OnTramSlotChanged` Blueprint event fired identically on server and clients. |
 | `ATramGameState` | `TramGameState.h/.cpp` | Replicated `NumTramSlots` (configurable, default 4 - never assumed elsewhere). `IsSlotOccupied`/`FindFirstFreeSlot`/`GetOccupiedSlots` are derived live from `PlayerArray`, so occupancy can never drift from a separately-maintained list. |
 | `ATramGameMode` | `TramGameMode.h/.cpp` | Server-only. `TryAssignTramSlot` is the one place slot decisions are made: releases any slot the rider already holds, validates a requested slot (range + occupancy), auto-falls-back to another free slot unless `bStrictSlotRequests` is set, and reports failure (no free slots) without corrupting state. Also wires `PlayerStateClass`/`GameStateClass`/`PlayerControllerClass` to the Tram classes, and frees a rider's slot implicitly on `Logout` (occupancy is derived live, so there is nothing extra to clean up). |
-| `ATramPlayerController` | `TramPlayerController.h/.cpp` | Owns the Server RPC (`ServerRequestTramSlot`) since, unlike the level-placed tram Actor, a PlayerController has a real owning connection. `BeginPlay` resolves an initial desired slot from `-TramSlot=N` on the command line, then `[TramSystem] PreferredSlot=` in ini config, else requests automatic assignment. `RequestTramSlot(int32)` is `BlueprintCallable` for an in-game slot-picker UI (the widget itself is a host-project concern, out of plugin scope). |
+| `ATramPlayerController` | `TramPlayerController.h/.cpp` | Owns the Server RPC (`ServerRequestTramSlot`) since, unlike the level-placed tram Actor, a PlayerController has a real owning connection. `BeginPlay` resolves an initial desired slot from `-TramSlot=N` on the command line, then nDisplay's own `-dc_node=N` launch arg (if numeric - added so a production machine needs only one consistent per-machine switch, not two kept in sync by hand; see SETUP.md 7c), then `[TramSystem] PreferredSlot=` in ini config, else requests automatic assignment. `RequestTramSlot(int32)` is `BlueprintCallable` for an in-game slot-picker UI (the widget itself is a host-project concern, out of plugin scope). |
 
 The listen server's own local rider goes through the identical RPC path (a Server RPC called
 from a locally-owned connection just executes in-process), so there is no special-cased host
@@ -319,6 +319,36 @@ does. Using it requires setting it as your project's `AGameModeBase::HUDClass` -
 host-project wiring step every other GameMode-adjacent class in this plugin needs (see SETUP.md
 3e). Purely read-only: it cannot affect synchronization, only observe it.
 
+## Production launch readiness
+
+Audited the full network path (replication setup, RPC usage, authority checks, relevancy flags,
+command-line slot resolution) specifically for running as separately-launched packaged builds
+across real machines rather than PIE windows - PIE windows already exercise the same replication
+code, but not real per-process command-line parsing or real network latency. Found and fixed one
+real issue and one real gap, both small:
+
+- `ATramPlayerController::BeginPlay` resolved its view target via `UGameplayStatics::GetActorOfClass`
+  (silently picks "whichever `ATramViewRig` is found first" if more than one exists in the
+  level) - switched to `GetAllActorsOfClass` with a loud warning on ambiguity, matching the
+  pattern already used for `UTramDisplayClusterViewSync`'s `RootActor` and `ATramSyncHUD`'s
+  `ViewRig`. Low real risk (a correctly-authored installation level only ever has one), but
+  worth being consistent and defensive about given it's exactly the kind of thing that's easy to
+  get wrong once when hand-authoring a level for real hardware.
+- Added the `-dc_node=` fallback to slot resolution described above - not a bug, but a real
+  reduction in operator error risk for a 4-machine launch, where two independently-typed
+  switches (`-TramSlot=` and nDisplay's own `-dc_node=`) previously had to be kept consistent by
+  hand with no cross-check (still true if you don't follow the plain-integer node-naming
+  convention it relies on - see SETUP.md 7c).
+
+Everything else - `CurrentSnapshot`/`LookRotationState` replication via `DOREPLIFETIME`,
+`HasAuthority()`-gated commands, `bAlwaysRelevant` on both the tram and the view rig,
+prediction/correction handling in `OnRep_CurrentSnapshot` - was already written assuming real
+network latency and multi-process launch from the start (not added later for this pass), so no
+further changes were needed there. Launching as a listen server is standard Unreal map-URL
+syntax (`?listen`), not a bespoke plugin switch - see SETUP.md section 4 for exact command lines
+for a real 4-machine deployment, including how `?listen`/`-TramSlot=`/`-dc_node=` combine on the
+listen-server machine, which (per Objective 24) also renders three displays like every other rider.
+
 ## Determinism model (why this satisfies the seam-consistency requirement)
 
 The component never integrates `DeltaTime` frame-over-frame. Instead:
@@ -355,10 +385,10 @@ Phase 1 code needs no rework in Phase 2 (Rule 14: prefer built-in Unreal systems
 - Default slot-conflict behavior favors automatic fallback over rejection
   (`bStrictSlotRequests = false`), per Objective 8's stated default; strict rejection is
   available as a per-installation toggle on `ATramGameMode`.
-- `-TramSlot=N` and `[TramSystem] PreferredSlot=` are read once, at `PlayerController::BeginPlay`,
-  on the locally-controlling machine only (`IsLocalController()`) - a remote client's command
-  line/config is never visible to the server, so this must happen client-side and be sent up
-  via RPC, not read server-side (Phase 3).
+- `-TramSlot=N`, `-dc_node=N`, and `[TramSystem] PreferredSlot=` are read once, at
+  `PlayerController::BeginPlay`, on the locally-controlling machine only (`IsLocalController()`)
+  - a remote client's command line/config is never visible to the server, so this must happen
+  client-side and be sent up via RPC, not read server-side (Phase 3).
 - Rotation-follow smoothing is a pure fixed time delay, not a true recursive/exponential
   filter - a recursive filter's state would need to be replayed from history to evaluate at an
   arbitrary synchronized time, which is incompatible with this plugin's stateless

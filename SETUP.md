@@ -337,10 +337,19 @@ root actor/screens are typically always-loaded (not tied to a World Partition st
 but `ATramViewRig` - along with the tram actor and route - defaults to being spatially loaded
 like any other placed actor, meaning it could theoretically be streamed out while something
 always-loaded still references it. Since these are core, always-needed actors rather than
-streamable background content, the fix is to mark them **Always Loaded**: select the actor,
-Details panel > World Partition > uncheck **Is Spatially Loaded**. Worth doing for `ATramViewRig`,
-the tram actor, and `ATramSplineRoute` even outside the nDisplay setup, if your level uses World
-Partition at all.
+streamable background content, the fix is to mark them **Always Loaded**.
+
+Where that setting actually lives depends on which World Partition runtime hash your project
+uses. On projects using the newer Runtime Hash Set (actors assigned to a named runtime
+partition, e.g. `WorldPartitionRuntimeHashSet` + `RuntimePartitionPersistent`, rather than a flat
+streaming grid), it's not a standalone top-level checkbox - it's nested under the actor's
+**World Partition > Runtime Settings** group alongside `HLODLayers`/`PartitionLayer`. Easiest way
+to find it regardless of layout: use the Details panel's search field and type "spatially" to
+filter straight to the property. Once the actor is assigned to the always-loaded/persistent
+partition (`bIsSpatiallyLoaded=False`), reload the level and re-check the Output Log filtered on
+`MapCheck` - confirmed clear on reload once `ATramViewRig` was correctly assigned. Worth doing
+for `ATramViewRig`, the tram actor, and `ATramSplineRoute` even outside the nDisplay setup, if
+your level uses World Partition at all.
 
 ## Known gaps at this stage
 

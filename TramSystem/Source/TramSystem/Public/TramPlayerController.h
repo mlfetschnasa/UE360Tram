@@ -55,9 +55,9 @@ protected:
 
 private:
 	// Resolves the slot to request at connect time, in priority order: command line
-	// (-TramSlot=N), then nDisplay's own -dc_node=N launch arg (only if it parses as a plain
-	// integer - see .cpp), then a [TramSystem] PreferredSlot= config value, else INDEX_NONE
-	// (auto).
+	// (-TramSlot=N), then nDisplay's own -dc_node= launch arg (its trailing digits, e.g.
+	// "Node_2" -> 2 - see .cpp), then a [TramSystem] PreferredSlot= config value, else
+	// INDEX_NONE (auto).
 	int32 ResolveInitialDesiredSlot() const;
 
 	// (Re)binds to the current PlayerState's OnTramSlotChanged if it has changed since the

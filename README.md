@@ -118,7 +118,7 @@ a controller:
 | `ATramPlayerState` | `TramPlayerState.h/.cpp` | Replicated `SlotIndex` per rider (`INDEX_NONE` = unassigned) plus a `OnTramSlotChanged` Blueprint event fired identically on server and clients. |
 | `ATramGameState` | `TramGameState.h/.cpp` | Replicated `NumTramSlots` (configurable, default 4 - never assumed elsewhere). `IsSlotOccupied`/`FindFirstFreeSlot`/`GetOccupiedSlots` are derived live from `PlayerArray`, so occupancy can never drift from a separately-maintained list. |
 | `ATramGameMode` | `TramGameMode.h/.cpp` | Server-only. `TryAssignTramSlot` is the one place slot decisions are made: releases any slot the rider already holds, validates a requested slot (range + occupancy), auto-falls-back to another free slot unless `bStrictSlotRequests` is set, and reports failure (no free slots) without corrupting state. Also wires `PlayerStateClass`/`GameStateClass`/`PlayerControllerClass` to the Tram classes, and frees a rider's slot implicitly on `Logout` (occupancy is derived live, so there is nothing extra to clean up). |
-| `ATramPlayerController` | `TramPlayerController.h/.cpp` | Owns the Server RPC (`ServerRequestTramSlot`) since, unlike the level-placed tram Actor, a PlayerController has a real owning connection. `BeginPlay` resolves an initial desired slot from `-TramSlot=N` on the command line, then nDisplay's own `-dc_node=N` launch arg (if numeric - added so a production machine needs only one consistent per-machine switch, not two kept in sync by hand; see SETUP.md 7c), then `[TramSystem] PreferredSlot=` in ini config, else requests automatic assignment. `RequestTramSlot(int32)` is `BlueprintCallable` for an in-game slot-picker UI (the widget itself is a host-project concern, out of plugin scope). |
+| `ATramPlayerController` | `TramPlayerController.h/.cpp` | Owns the Server RPC (`ServerRequestTramSlot`) since, unlike the level-placed tram Actor, a PlayerController has a real owning connection. `BeginPlay` resolves an initial desired slot from `-TramSlot=N` on the command line, then nDisplay's own `-dc_node=` launch arg's trailing digits (e.g. `Node_2` -> `2`, matching nDisplay's own default node-naming convention - added so a production machine needs only one consistent per-machine switch, not two kept in sync by hand; see SETUP.md 7c), then `[TramSystem] PreferredSlot=` in ini config, else requests automatic assignment. `RequestTramSlot(int32)` is `BlueprintCallable` for an in-game slot-picker UI (the widget itself is a host-project concern, out of plugin scope). |
 
 The listen server's own local rider goes through the identical RPC path (a Server RPC called
 from a locally-owned connection just executes in-process), so there is no special-cased host
@@ -337,8 +337,9 @@ real issue and one real gap, both small:
 - Added the `-dc_node=` fallback to slot resolution described above - not a bug, but a real
   reduction in operator error risk for a 4-machine launch, where two independently-typed
   switches (`-TramSlot=` and nDisplay's own `-dc_node=`) previously had to be kept consistent by
-  hand with no cross-check (still true if you don't follow the plain-integer node-naming
-  convention it relies on - see SETUP.md 7c).
+  hand with no cross-check. It reads `-dc_node=`'s *trailing digits* (e.g. `Node_2` -> `2`) since
+  nDisplay's own Configurator defaults to naming nodes `Node_0`.. rather than plain integers -
+  still true that there's no cross-*check* if the two disagree, just the fallback.
 
 Everything else - `CurrentSnapshot`/`LookRotationState` replication via `DOREPLIFETIME`,
 `HasAuthority()`-gated commands, `bAlwaysRelevant` on both the tram and the view rig,
@@ -348,6 +349,15 @@ further changes were needed there. Launching as a listen server is standard Unre
 syntax (`?listen`), not a bespoke plugin switch - see SETUP.md section 4 for exact command lines
 for a real 4-machine deployment, including how `?listen`/`-TramSlot=`/`-dc_node=` combine on the
 listen-server machine, which (per Objective 24) also renders three displays like every other rider.
+
+**Confirmed in real 4-machine hardware testing: a level-placed `ADisplayClusterRootActor` alone
+is not enough for a packaged launch.** It's sufficient for the in-editor preview (7b), but a
+standalone build doesn't pick that level actor's config up at all - `-dc_node=` was silently
+ignored and every machine just opened one ordinary window at a single display's aspect ratio.
+The actual requirement (per Epic's docs): export the config to a `.ndisplay` file and pass its
+path via `-dc_cfg=` on every machine - see SETUP.md section 4. This plugin's own code wasn't the
+cause and needed no change for this; it's purely an nDisplay launch-configuration step that was
+missing from the original SETUP.md guidance and has now been added.
 
 ## Determinism model (why this satisfies the seam-consistency requirement)
 

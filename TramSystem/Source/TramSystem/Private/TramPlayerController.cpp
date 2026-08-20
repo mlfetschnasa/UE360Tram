@@ -121,16 +121,24 @@ int32 ATramPlayerController::ResolveInitialDesiredSlot() const
 	// machine only needs ONE consistent per-machine switch instead of two that have to be kept
 	// in sync by hand - this is purely reading a well-known command-line token as plain text
 	// (FParse doesn't touch anything DisplayCluster-specific), so it does not create a
-	// dependency on that plugin/module (Objective 19 stays intact). -dc_node= is nDisplay's own
-	// cluster node ID and isn't guaranteed to be numeric (it's whatever the config's node was
-	// named) - only used here if it happens to parse as a plain integer; otherwise this falls
-	// through to the ini/auto-assign options below, same as if -dc_node= were absent. Naming
-	// cluster nodes "0".."3" to match tram slot indices is the recommended convention if you
-	// want this fallback to actually apply.
+	// dependency on that plugin/module (Objective 19 stays intact). -dc_node= is a string key
+	// that must match a node ID in the nDisplay config exactly (nDisplay looks it up by ID, not
+	// position), and nDisplay's own Configurator tool defaults to naming nodes "Node_0".."Node_3"
+	// rather than plain integers - so this extracts the trailing run of digits (e.g. "Node_2" ->
+	// 2) instead of requiring the whole value to be numeric. Falls through to the ini/auto-assign
+	// options below if -dc_node= is absent or has no trailing digits at all.
 	FString DcNodeId;
-	if (FParse::Value(FCommandLine::Get(), TEXT("dc_node="), DcNodeId) && !DcNodeId.IsEmpty() && DcNodeId.IsNumeric())
+	if (FParse::Value(FCommandLine::Get(), TEXT("dc_node="), DcNodeId) && !DcNodeId.IsEmpty())
 	{
-		return FCString::Atoi(*DcNodeId);
+		int32 DigitsStart = DcNodeId.Len();
+		while (DigitsStart > 0 && FChar::IsDigit(DcNodeId[DigitsStart - 1]))
+		{
+			--DigitsStart;
+		}
+		if (DigitsStart < DcNodeId.Len())
+		{
+			return FCString::Atoi(*DcNodeId.Mid(DigitsStart));
+		}
 	}
 
 	if (GConfig && GConfig->GetInt(TEXT("TramSystem"), TEXT("PreferredSlot"), Value, GGameIni))

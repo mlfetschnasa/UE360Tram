@@ -176,30 +176,47 @@ evaluation - watch that they report matching values (see the diagnostics note be
 **Packaged/launched builds** (closer to the real 4-machine installation): launch the server with
 a `?listen` map URL, e.g. `MyProject.exe /Game/Maps/MyMap?listen`; launch each client with the
 server's address and, optionally, an explicit slot: `MyProject.exe <ServerIP> -TramSlot=2`. If
-`-TramSlot` is omitted, `ATramPlayerController` falls back to nDisplay's own `-dc_node=` arg (if
-numeric), then `[TramSystem] PreferredSlot=` in ini config, then requests automatic assignment
-(see Phase 3 in README.md for the full priority order).
+`-TramSlot` is omitted, `ATramPlayerController` falls back to nDisplay's own `-dc_node=` arg
+(its trailing digits - see below), then `[TramSystem] PreferredSlot=` in ini config, then
+requests automatic assignment (see Phase 3 in README.md for the full priority order).
+
+**A placed root actor alone is not enough for a packaged launch - confirmed in real 4-machine
+testing.** Everything in section 7 (placing `ADisplayClusterRootActor` in the level, configuring
+its nodes/screens) is sufficient for the in-editor preview (7b), but a standalone/packaged build
+does **not** pick that level actor's config up at all - without more, `-dc_node=` is silently
+ignored and every machine just opens one ordinary single window at a single display's aspect
+ratio, indistinguishable from not using nDisplay at all. Production launch needs the config
+**exported** to a `.ndisplay` file (an Export action on the root actor/config - exact menu
+location depends on your engine build; look on the root actor's Details panel or the nDisplay
+editor toolbar) and that file's path passed via **`-dc_cfg=`** on every machine. Once a config is
+specified externally this way, a root actor placed in the level is ignored in favor of it - the
+two don't conflict.
+
+**`-dc_node=` is a string key, not a position** - it must match a node's ID in the config exactly.
+nDisplay's own Configurator defaults to naming nodes `Node_0`, `Node_1`, etc. (not plain
+integers), so use those exact names, e.g. `-dc_node=Node_2`. `ResolveInitialDesiredSlot`'s
+fallback handles this by reading the *trailing digits* of whatever `-dc_node=` value it sees
+(`Node_2` -> slot `2`), not by requiring the whole value to be numeric - but `-TramSlot=` is
+still the more explicit, unambiguous choice and is what the examples below use.
 
 **Full 4-machine production launch** (Objective 24: the listen-server machine also renders three
-displays like every other rider, so its own command line needs both the `?listen` map URL *and*
-its own `-TramSlot=`/`-dc_node=`):
+displays like every other rider, so its own command line needs the `?listen` map URL, its own
+`-TramSlot=`/`-dc_node=`, *and* `-dc_cfg=`):
 
 ```
-# Listen-server machine (also slot 0 / cluster node 0):
-MyProject.exe /Game/Maps/InstallMap?listen -TramSlot=0 -dc_node=0
+# Listen-server machine (also slot 0 / cluster node "Node_0"):
+MyProject.exe /Game/Maps/InstallMap?listen -TramSlot=0 -dc_node=Node_0 -dc_cfg="C:\TramCluster\install.ndisplay"
 
 # Client machines (slots 1-3):
-MyProject.exe <ServerIP> -TramSlot=1 -dc_node=1
-MyProject.exe <ServerIP> -TramSlot=2 -dc_node=2
-MyProject.exe <ServerIP> -TramSlot=3 -dc_node=3
+MyProject.exe <ServerIP> -TramSlot=1 -dc_node=Node_1 -dc_cfg="C:\TramCluster\install.ndisplay"
+MyProject.exe <ServerIP> -TramSlot=2 -dc_node=Node_2 -dc_cfg="C:\TramCluster\install.ndisplay"
+MyProject.exe <ServerIP> -TramSlot=3 -dc_node=Node_3 -dc_cfg="C:\TramCluster\install.ndisplay"
 ```
 
-If your nDisplay cluster nodes are named plainly as `"0"`-`"3"` (matching tram slot indices -
-see 7c), `-TramSlot=` becomes redundant and can be dropped, since `ResolveInitialDesiredSlot`
-now falls back to `-dc_node=` automatically; the explicit form above is shown for clarity and
-still works (and is required if your node names aren't plain integers). Default LAN networking
-applies - no bespoke NetDriver/port config - so the usual Unreal defaults hold: TCP/UDP port
-7777, and each client needs the listen-server machine's IP reachable on the LAN.
+The exported `.ndisplay` file needs to exist at that same path on all 4 machines (copy it
+alongside the build, or to a matching local path on each). Default LAN networking applies - no
+bespoke NetDriver/port config - so the usual Unreal defaults hold: TCP/UDP port 7777, and each
+client needs the listen-server machine's IP reachable on the LAN.
 
 ## 5. Triggering tram/slot/look actions during a test
 
@@ -334,11 +351,13 @@ numbers it asks for from your `UTramDisplayConfiguration` data asset:
 - **Node ↔ machine mapping**: nDisplay's own per-node config (host IP, `-dc_node=` launch arg)
   is separate from this plugin's `-TramSlot=` mechanism - make sure whoever sets up each
   physical PC's launch shortcut keeps both consistent for that machine (e.g. the PC configured
-  as nDisplay node 0 should also launch with `-TramSlot=0`). If you name your cluster nodes
-  plainly as `"0"`-`"3"`, `ATramPlayerController` now falls back to `-dc_node=` automatically
-  when `-TramSlot=` is omitted (see section 4), so there's only one switch to get right per
-  machine instead of two kept in sync by hand - but there's still no cross-*checking* (a warning
-  if the two disagree), just the one-switch-is-enough fallback.
+  as nDisplay node `Node_0` should also launch with `-TramSlot=0`). `-dc_node=` must match a
+  node's ID in the config exactly - it's a string key lookup, not a position - and the
+  Configurator's default node names are `Node_0`, `Node_1`, etc., not plain integers.
+  `ATramPlayerController` falls back to `-dc_node=`'s *trailing digits* automatically when
+  `-TramSlot=` is omitted (`Node_2` -> slot `2` - see section 4), so there's only one switch to
+  get right per machine instead of two kept in sync by hand - but there's still no
+  cross-*checking* (a warning if the two disagree), just the one-switch-is-enough fallback.
 
 #### How nDisplay's Node/Viewport/Screen hierarchy maps onto this project's Slot/Display concepts
 

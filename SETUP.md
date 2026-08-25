@@ -155,16 +155,26 @@ composed observer forward vector.
 ### 3e. Synchronization HUD (Objective 26, optional)
 
 `ATramSyncHUD` prints the diagnostics Objective 26 asks for directly to the screen via
-`Canvas::DrawText` - no UMG/content assets needed. Since `ATramGameMode` doesn't set `HUDClass`
-(same reasoning as `PlayerControllerClass` in 3d0 - it's a host-project concern), using it needs
-either a Blueprint child of `ATramGameMode` with `HUDClass` set to `ATramSyncHUD`, or a small
-C++ subclass that sets `HUDClass = ATramSyncHUD::StaticClass()` in its constructor.
+`Canvas::DrawText` - no UMG/content assets needed. This goes on your **GameMode**, not the
+PlayerController: since `ATramGameMode` doesn't set `HUDClass` (same reasoning as
+`PlayerControllerClass` in 3d0 - it's a host-project concern), your project's GameMode Blueprint
+(or a small C++ subclass that sets `HUDClass = ATramSyncHUD::StaticClass()` in its constructor)
+needs to set `HUDClass` to `ATramSyncHUD` in Class Defaults - the engine then spawns/assigns one
+automatically per locally-controlled player, with no PlayerController-side wiring at all.
 
-It's off by default (`bShowSyncHUD = false`) so it never appears unintentionally - either check
-that box directly on a placed instance for testing, or call `ToggleSyncHUD()` from a debug input
-binding. `ViewRig` auto-resolves the same single-candidate-only way `UTramDisplayClusterViewSync`'s
-`RootActor` does (3a); set `DisplayConfiguration` (from 3d) explicitly if you want the "Global
-display indices" line populated for this machine's assigned slot.
+It's off by default (`bShowSyncHUD = false`) so it never appears unintentionally. `AHUD` is
+always spawned dynamically at runtime, though - never placed in a level like the components
+elsewhere in this plugin - so there's no per-instance Details panel to check a box on. Two
+options: call `ToggleSyncHUD()` from a debug input binding, or (recommended if you're debugging
+something like input not reaching a window at all, where a *new* keybind has the same failure
+mode you're chasing) make a small Blueprint child of `ATramSyncHUD` with `bShowSyncHUD = true`
+in *its* Class Defaults, and point `HUDClass` at that child instead - it then shows up
+unconditionally, no input required. `ViewRig` auto-resolves the same single-candidate-only way
+`UTramDisplayClusterViewSync`'s `RootActor` does (3a) and has no manual override (it's a
+level-specific actor reference, which doesn't fit a dynamically-spawned class's Class Defaults);
+`DisplayConfiguration` is `EditDefaultsOnly` for the same "always dynamically spawned" reason -
+set it in that same Blueprint child's Class Defaults if you want the "Global display indices"
+line populated, otherwise it's simply omitted.
 
 ## 4. Running a multi-machine test
 

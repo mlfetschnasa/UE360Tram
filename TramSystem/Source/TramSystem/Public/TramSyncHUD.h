@@ -34,8 +34,11 @@ public:
 	TObjectPtr<ATramViewRig> ViewRig;
 
 	// Optional. Only needed to resolve this machine's "Global display indices" line; that line
-	// is simply omitted if left unset.
-	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Tram|Debug")
+	// is simply omitted if left unset. EditDefaultsOnly, not EditInstanceOnly - unlike the other
+	// EditInstanceOnly fields elsewhere in this plugin, AHUD is always spawned dynamically at
+	// runtime (via GameMode::HUDClass), never placed in a level, so there is no per-instance
+	// Details panel to set this on - a Blueprint child of this class can set it in Class Defaults.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Tram|Debug")
 	TObjectPtr<UTramDisplayConfiguration> DisplayConfiguration;
 
 	UFUNCTION(BlueprintCallable, Category = "Tram|Debug")
